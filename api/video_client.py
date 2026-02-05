@@ -95,7 +95,7 @@ class VideoClient:
             )
 
         response = self.session.post(
-            f"{self.base_url}/v1/video/create",
+            f"{self.base_url}/v1/video/create",  # URL 不包含模型名
             headers=self._get_headers(),
             json=payload,
             timeout=self.timeout
@@ -158,6 +158,21 @@ class VideoClient:
         print(f"Image converted to base64: {len(image_base64)} chars ({len(image_bytes) / 1024:.1f} KB)")
         
         return f"data:image/jpeg;base64,{image_base64}"
+
+    def _build_grok_payload(self,
+                            model: str,
+                            prompt: str,
+                            image_urls: List[str],
+                            aspect_ratio: str = "3:2",
+                            size: str = "720P") -> Dict[str, Any]:
+        """构建 Grok 视频 payload（符合官方 API 格式）"""
+        return {
+            "model": model,
+            "prompt": prompt,
+            "images": image_urls,  # 官方字段名是 images
+            "aspect_ratio": aspect_ratio,
+            "size": size
+        }
 
     def _build_veo_payload(self, model: str, prompt: str,
                           image_urls: List[str], aspect_ratio: str,

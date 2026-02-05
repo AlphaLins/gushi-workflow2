@@ -1,0 +1,100 @@
+{
+    "画风预设": {
+        "中国水墨画": {
+            "image_prompt_template": "Traditional Chinese ink wash painting, {subject}, misty atmosphere, monochromatic, elegant brush strokes, minimalist composition, poetic ambiance",
+            "video_prompt_template": "Gentle camera pan across ink wash painting, subtle mist movement, serene and contemplative mood",
+            "description": "传统水墨画风格，适合山水、花鸟等题材"
+        },
+        "工笔画": {
+            "image_prompt_template": "Fine brushwork Chinese painting (Gongbi), {subject}, meticulous details, vibrant colors, gold accents, traditional composition, elegant lines",
+            "video_prompt_template": "Slow zoom revealing intricate details, delicate movements, refined and graceful atmosphere",
+            "description": "工笔细描，色彩鲜艳，细节丰富"
+        },
+        "现代国潮": {
+            "image_prompt_template": "Modern Chinese style illustration, {subject}, bold colors, cyberpunk elements mixed with traditional motifs, neon glow, contemporary aesthetic",
+            "video_prompt_template": "Dynamic camera movement, neon light transitions, fusion of ancient and modern",
+            "description": "传统与现代结合，赛博朋克与国风融合"
+        },
+        "油画风格": {
+            "image_prompt_template": "Oil painting style, {subject}, rich textures, impressionist brushwork, warm lighting, classical composition",
+            "video_prompt_template": "Painterly camera movement, soft focus transitions, romantic and atmospheric",
+            "description": "西方油画质感，适合人物和风景"
+        },
+        "3D渲染": {
+            "image_prompt_template": "3D rendered scene, {subject}, cinematic lighting, depth of field, physically based rendering, photorealistic details",
+            "video_prompt_template": "Smooth 3D camera movement, dynamic lighting changes, modern and polished",
+            "description": "现代3D渲染，科技感强"
+        }
+    },
+    "场景预设": {
+        "山水意境": {
+            "image_prompt_template": "Majestic mountain landscape, {subject}, flowing rivers, pine trees, mist-covered peaks, serene and vast, traditional Chinese landscape painting style",
+            "video_prompt_template": "Sweeping aerial view of mountains, mist rolling through valleys, peaceful and contemplative",
+            "description": "壮丽山水，适合描绘自然景观"
+        },
+        "花鸟虫鱼": {
+            "image_prompt_template": "Delicate botanical illustration, {subject}, birds perched on branches, insects among flowers, soft colors, naturalistic details",
+            "video_prompt_template": "Gentle breeze moving flowers, birds in subtle motion, peaceful garden atmosphere",
+            "description": "精致花鸟，展现生命之美"
+        },
+        "人物肖像": {
+            "image_prompt_template": "Classical Chinese portrait, {subject}, traditional costume, elegant pose, soft lighting, refined features, cultural details",
+            "video_prompt_template": "Subtle facial expressions, fabric flowing gently, dignified and graceful presence",
+            "description": "古典人物，展现风采神韵"
+        },
+        "建筑园林": {
+            "image_prompt_template": "Traditional Chinese architecture, {subject}, pavilions, courtyards, intricate rooflines, lanterns, harmonious composition",
+            "video_prompt_template": "Walking through traditional gardens, architectural details revealed, serene atmosphere",
+            "description": "古典建筑，雕梁画栋"
+        },
+        "抽象意境": {
+            "image_prompt_template": "Abstract artistic interpretation, {subject}, flowing forms, symbolic elements, poetic atmosphere, dreamlike quality",
+            "video_prompt_template": "Abstract shapes morphing, symbolic transitions, ethereal and contemplative",
+            "description": "抽象表现，意境深远"
+        }
+    },
+    "视频效果预设": {
+        "缓慢推镜": {
+            "video_prompt_template": "Slow forward camera push towards {subject}, gradual reveal, cinematic and dramatic",
+            "description": "缓慢向前推进，逐渐展现细节"
+        },
+        "摇镜展示": {
+            "video_prompt_template": "Smooth pan across {subject}, revealing the full scene, elegant camera movement",
+            "description": "横向或纵向摇动，展示全景"
+        },
+        "静态微动": {
+            "video_prompt_template": "Mostly static composition with subtle movements in {subject}, wind effects, gentle breathing",
+            "description": "画面基本静止，只有细微动态"
+        },
+        "动态粒子": {
+            "video_prompt_template": "Floating particles and light effects around {subject}, magical atmosphere, dynamic energy",
+            "description": "添加粒子特效，营造氛围"
+        },
+        "时间流逝": {
+            "video_prompt_template": "Time-lapse effect showing {subject} changing over time, cloud movement, light transitions",
+            "description": "时间流逝效果，展现变化"
+        }
+    },
+    "情感氛围": {
+        "宁静悠远": {
+            "image_prompt_template": "Tranquil and serene scene, {subject}, peaceful atmosphere, soft colors, contemplative mood",
+            "video_prompt_template": "Slow, meditative camera movement, calm and soothing atmosphere",
+            "description": "平静祥和，适合山水田园"
+        },
+        "壮丽雄浑": {
+            "image_prompt_template": "Epic and grandiose composition, {subject}, dramatic lighting, powerful presence, awe-inspiring scale",
+            "video_prompt_template": "Sweeping cinematic movement, dramatic reveals, powerful and majestic",
+            "description": "气势磅礴，适合大场景"
+        },
+        "柔美婉约": {
+            "image_prompt_template": "Soft and gentle aesthetic, {subject}, pastel colors, delicate details, romantic atmosphere",
+            "video_prompt_template": "Gentle flowing movements, soft focus, tender and graceful",
+            "description": "温柔细腻，适合花鸟人物"
+        },
+        "肃穆庄重": {
+            "image_prompt_template": "Solemn and dignified composition, {subject}, formal arrangement, muted colors, respectful tone",
+            "video_prompt_template": "Steady, measured camera movement, deliberate pacing, formal atmosphere",
+            "description": "庄严肃穆，适合历史题材"
+        }
+    }
+}

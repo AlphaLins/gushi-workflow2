@@ -81,37 +81,58 @@ class ImageGalleryPage(QWidget):
 
         layout.addWidget(self.tab_widget)
 
-    def _create_control_panel(self) -> QGroupBox:
+    def _create_control_panel(self) -> QWidget:
         """创建控制面板"""
-        group = QGroupBox("生成控制")
-        layout = QHBoxLayout(group)
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
 
         # 生成按钮
-        self.generate_btn = QPushButton("开始生成")
-        self.generate_btn.setEnabled(False)
+        self.generate_btn = QPushButton("🎨 生成图像")
         self.generate_btn.clicked.connect(self._start_generation)
         layout.addWidget(self.generate_btn)
 
         # 停止按钮
-        self.stop_btn = QPushButton("停止")
-        self.stop_btn.setEnabled(False)
+        self.stop_btn = QPushButton("⏹ 停止")
         self.stop_btn.clicked.connect(self._stop_generation)
+        self.stop_btn.setEnabled(False)
         layout.addWidget(self.stop_btn)
 
         # 重试失败
-        self.retry_btn = QPushButton("重试失败")
-        self.retry_btn.setEnabled(False)
+        self.retry_btn = QPushButton("🔄 重试失败")
         self.retry_btn.clicked.connect(self._retry_failed)
         layout.addWidget(self.retry_btn)
 
-        # 导出
-        self.export_btn = QPushButton("导出选中")
+        layout.addStretch()
+
+        # 选择操作区
+        self.select_all_btn = QPushButton("☑️ 全选")
+        self.select_all_btn.clicked.connect(self._select_all_images)
+        layout.addWidget(self.select_all_btn)
+
+        self.deselect_all_btn = QPushButton("◻️ 反选")
+        self.deselect_all_btn.clicked.connect(self._deselect_all_images)
+        layout.addWidget(self.deselect_all_btn)
+
+        # 批量操作
+        self.regenerate_selected_btn = QPushButton("🔄 重新生成选中")
+        self.regenerate_selected_btn.clicked.connect(self._regenerate_selected_images)
+        layout.addWidget(self.regenerate_selected_btn)
+        
+        # 编辑提示词按钮
+        self.edit_prompt_btn = QPushButton("✏️ 编辑提示词")
+        self.edit_prompt_btn.clicked.connect(self._edit_selected_prompts)
+        self.edit_prompt_btn.setToolTip("编辑选中图片的提示词并重新生成")
+        layout.addWidget(self.edit_prompt_btn)
+
+        self.generate_video_btn = QPushButton("🎬 生成视频")
+        self.generate_video_btn.clicked.connect(self._generate_video_from_selected)
+        layout.addWidget(self.generate_video_btn)
+
+        self.export_btn = QPushButton("📥 导出选中")
         self.export_btn.clicked.connect(self._export_images)
         layout.addWidget(self.export_btn)
 
-        layout.addStretch()
-
-        return group
+        return widget
 
     def _create_pending_widget(self) -> QWidget:
         """创建待生成列表"""
@@ -576,25 +597,187 @@ class ImageGalleryPage(QWidget):
             QMessageBox.information(self, "提示", "请先选择要导出的图片")
             return
 
+        # 选择导出格式
+        from PySide6.QtWidgets import QDialog, QRadioButton, QDialogButtonBox, QVBoxLayout
+        
+        format_dialog = QDialog(self)
+        format_dialog.setWindowTitle("选择导出格式")
+        layout = QVBoxLayout(format_dialog)
+        
+        folder_radio = QRadioButton("📁 复制到文件夹")
+        folder_radio.setChecked(True)
+        zip_radio = QRadioButton("📦 打包为 ZIP（包含元数据）")
+        
+        layout.addWidget(folder_radio)
+        layout.addWidget(zip_radio)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(format_dialog.accept)
+        buttons.rejected.connect(format_dialog.reject)
+        layout.addWidget(buttons)
+        
+        if format_dialog.exec() != QDialog.Accepted:
+            return
+        
+        # 执行导出
+        if zip_radio.isChecked():
+            self._export_as_zip()
+        else:
+            self._export_to_folder()
+    
+    def _export_to_folder(self):
+        """导出到文件夹"""
         directory = QFileDialog.getExistingDirectory(self, "选择导出目录")
-        if directory:
-            import shutil
-            export_count = 0
+        if not directory:
+            return
+            
+        import shutil
+        export_count = 0
 
-            for verse_index, prompt_index in self.selected_images:
-                key = (verse_index, prompt_index)
-                if key in self.generated_images:
-                    path = self.generated_images[key].get('path')
-                    if path and Path(path).exists():
-                        dest = Path(directory) / Path(path).name
-                        shutil.copy(path, dest)
-                        export_count += 1
+        for verse_index, prompt_index in self.selected_images:
+            key = (verse_index, prompt_index)
+            if key in self.generated_images:
+                path = self.generated_images[key].get('path')
+                if path and Path(path).exists():
+                    dest = Path(directory) / Path(path).name
+                    shutil.copy(path, dest)
+                    export_count += 1
 
+        QMessageBox.information(
+            self,
+            "导出完成",
+            f"已导出 {export_count} 张图片到 {directory}"
+        )
+    
+    def _export_as_zip(self):
+        """导出为 ZIP 文件（包含元数据）"""
+        import zipfile
+        import json
+        from datetime import datetime
+        
+        # 选择保存位置
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存 ZIP",
+            f"images_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+            "ZIP 文件 (*.zip)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                metadata_list = []
+                
+                for verse_index, prompt_index in self.selected_images:
+                    key = (verse_index, prompt_index)
+                    if key in self.generated_images:
+                        img_data = self.generated_images[key]
+                        path = img_data.get('path')
+                        
+                        if path and Path(path).exists():
+                            # 添加图片到 ZIP
+                            arcname = f"verse_{verse_index}_prompt_{prompt_index}_{Path(path).name}"
+                            zipf.write(path, arcname)
+                            
+                            # 收集元数据
+                            metadata_list.append({
+                                'filename': arcname,
+                                'verse_index': verse_index,
+                                'prompt_index': prompt_index,
+                                'image_prompt': img_data.get('description', ''),
+                                'video_prompt': img_data.get('video_prompt', ''),
+                                'generated_at': datetime.now().isoformat()
+                            })
+                
+                # 添加元数据文件
+                metadata_json = json.dumps(metadata_list, ensure_ascii=False, indent=2)
+                zipf.writestr('metadata.json', metadata_json)
+                
+                # 添加 README
+                readme_content = f"""# 图像导出包
+
+导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+图片数量: {len(metadata_list)}
+
+## 文件说明
+- metadata.json: 图片元数据（提示词、索引等）
+- verse_*_prompt_*.png: 生成的图片
+
+## 元数据格式
+每张图片包含：
+- filename: 文件名
+- verse_index: 诗句索引
+- prompt_index: 提示词索引
+- image_prompt: 图像提示词
+- video_prompt: 视频提示词
+- generated_at: 生成时间
+"""
+                zipf.writestr('README.txt', readme_content)
+            
             QMessageBox.information(
                 self,
-                "导出完成",
-                f"已导出 {export_count} 张图片到 {directory}"
+                "导出成功",
+                f"已导出 {len(metadata_list)} 张图片到:\n{file_path}"
             )
+            
+        except Exception as e:
+            QMessageBox.warning(self, "导出失败", f"错误: {str(e)}")
+
+    def _edit_selected_prompts(self):
+        """编辑选中图片的提示词并重新生成"""
+        if not self.selected_images:
+            QMessageBox.information(self, "提示", "请先选择要编辑的图片")
+            return
+        
+        from PySide6.QtWidgets import QInputDialog
+        
+        # 如果只选了一张图，显示当前提示词
+        if len(self.selected_images) == 1:
+            verse_index, prompt_index = list(self.selected_images)[0]
+            key = (verse_index, prompt_index)
+            current_prompt = ""
+            
+            if key in self.generated_images:
+                current_prompt = self.generated_images[key].get('description', '')
+            
+            # 编辑提示词
+            new_prompt, ok = QInputDialog.getMultiLineText(
+                self,
+                "编辑图像提示词",
+                f"诗句 {verse_index + 1} - 提示词 {prompt_index + 1}:",
+                current_prompt
+            )
+            
+            if ok and new_prompt.strip():
+                # 重新生成这一张
+                self._regenerate_with_new_prompt(verse_index, prompt_index, new_prompt.strip())
+        else:
+            # 多张图片，使用统一提示词
+            new_prompt, ok = QInputDialog.getMultiLineText(
+                self,
+                "批量编辑提示词",
+                f"将为选中的 {len(self.selected_images)} 张图片使用新提示词:",
+                "A beautiful scene in traditional Chinese art style..."
+            )
+            
+            if ok and new_prompt.strip():
+                for verse_index, prompt_index in self.selected_images:
+                    self._regenerate_with_new_prompt(verse_index, prompt_index, new_prompt.strip())
+    
+    def _regenerate_with_new_prompt(self, verse_index: int, prompt_index: int, new_prompt: str):
+        """使用新提示词重新生成单张图片"""
+        key = (verse_index, prompt_index)
+        
+        # 更新提示词数据
+        if self.prompts and verse_index < len(self.prompts.prompts):
+            verse_prompts = self.prompts.prompts[verse_index]
+            if prompt_index < len(verse_prompts.descriptions):
+                verse_prompts.descriptions[prompt_index].description = new_prompt
+        
+        # 触发重新生成
+        self._regenerate_images([(verse_index, prompt_index, new_prompt, self.generated_images[key].get('video_prompt', ''))])
 
 
 class ClickableLabel(QLabel):
@@ -629,9 +812,14 @@ class ImagePreviewDialog(QDialog):
         self.prompt_index = prompt_index
         self.prompts = prompts
         self.generated_images = generated_images
+        
+        # MJ 相关状态
+        self.mj_task_id = None
+        self.mj_buttons = []
+        self.mj_worker = None
 
         self.setWindowTitle("图片预览")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(900, 700)
         self._init_ui()
 
     def _init_ui(self):
@@ -642,11 +830,11 @@ class ImagePreviewDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
 
-        image_label = QLabel()
+        self.image_label = QLabel()
         pixmap = QPixmap(self.path)
-        image_label.setPixmap(pixmap)
-        image_label.setAlignment(Qt.AlignCenter)
-        scroll.setWidget(image_label)
+        self.image_label.setPixmap(pixmap)
+        self.image_label.setAlignment(Qt.AlignCenter)
+        scroll.setWidget(self.image_label)
 
         layout.addWidget(scroll)
 
@@ -682,6 +870,9 @@ class ImagePreviewDialog(QDialog):
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
 
+        # MJ 处理面板
+        self._create_mj_panel(layout)
+
         # 按钮区域
         btn_layout = QHBoxLayout()
 
@@ -699,6 +890,238 @@ class ImagePreviewDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
+    def _create_mj_panel(self, parent_layout):
+        """创建 Midjourney 处理面板"""
+        mj_group = QGroupBox("Midjourney 处理")
+        mj_layout = QVBoxLayout()
+
+        # 说明
+        hint = QLabel("上传图片到 Midjourney 进行以图生图、放大、变换等操作")
+        hint.setStyleSheet("color: #888;")
+        mj_layout.addWidget(hint)
+
+        # 进度条
+        self.mj_progress = QProgressBar()
+        self.mj_progress.setTextVisible(True)
+        self.mj_progress.setFormat("就绪")
+        self.mj_progress.setValue(0)
+        mj_layout.addWidget(self.mj_progress)
+
+        # 状态标签
+        self.mj_status_label = QLabel("")
+        mj_layout.addWidget(self.mj_status_label)
+
+        # 启动按钮
+        start_layout = QHBoxLayout()
+        
+        self.mj_start_btn = QPushButton("🎨 开始 MJ 处理")
+        self.mj_start_btn.setStyleSheet("padding: 8px 16px; font-weight: bold;")
+        self.mj_start_btn.clicked.connect(self._start_mj_processing)
+        start_layout.addWidget(self.mj_start_btn)
+        
+        start_layout.addStretch()
+        mj_layout.addLayout(start_layout)
+
+        # 操作按钮区域（初始隐藏）
+        self.mj_actions_widget = QWidget()
+        actions_layout = QVBoxLayout(self.mj_actions_widget)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 放大按钮行
+        upscale_layout = QHBoxLayout()
+        upscale_layout.addWidget(QLabel("放大:"))
+        self.mj_u_btns = []
+        for i in range(1, 5):
+            btn = QPushButton(f"U{i}")
+            btn.setEnabled(False)
+            btn.clicked.connect(lambda checked, idx=i: self._on_mj_action_clicked(f"U{idx}"))
+            upscale_layout.addWidget(btn)
+            self.mj_u_btns.append(btn)
+        upscale_layout.addStretch()
+        actions_layout.addLayout(upscale_layout)
+
+        # 变换按钮行
+        variation_layout = QHBoxLayout()
+        variation_layout.addWidget(QLabel("变换:"))
+        self.mj_v_btns = []
+        for i in range(1, 5):
+            btn = QPushButton(f"V{i}")
+            btn.setEnabled(False)
+            btn.clicked.connect(lambda checked, idx=i: self._on_mj_action_clicked(f"V{idx}"))
+            variation_layout.addWidget(btn)
+            self.mj_v_btns.append(btn)
+        variation_layout.addStretch()
+        actions_layout.addLayout(variation_layout)
+
+        # 重绘按钮
+        other_layout = QHBoxLayout()
+        other_layout.addWidget(QLabel("其他:"))
+        self.mj_reroll_btn = QPushButton("🔄 重绘")
+        self.mj_reroll_btn.setEnabled(False)
+        self.mj_reroll_btn.clicked.connect(lambda: self._on_mj_action_clicked("reroll"))
+        other_layout.addWidget(self.mj_reroll_btn)
+        other_layout.addStretch()
+        actions_layout.addLayout(other_layout)
+
+        self.mj_actions_widget.setVisible(False)
+        mj_layout.addWidget(self.mj_actions_widget)
+
+        mj_group.setLayout(mj_layout)
+        parent_layout.addWidget(mj_group)
+
+    def _start_mj_processing(self):
+        """开始 MJ 处理"""
+        from core.app import get_app_state
+        
+        app_state = get_app_state()
+        api_key = app_state.config.api_key
+        base_url = app_state.config.base_url
+        
+        if not api_key:
+            QMessageBox.warning(self, "错误", "请先设置 API Key")
+            return
+        
+        self.mj_start_btn.setEnabled(False)
+        self.mj_progress.setFormat("正在处理...")
+        self.mj_progress.setValue(10)
+        self.mj_status_label.setText("正在上传图片并提交 Imagine 任务...")
+        
+        # 启动工作线程
+        self.mj_worker = MJProcessingThread(
+            api_key=api_key,
+            base_url=base_url,
+            image_path=self.path
+        )
+        self.mj_worker.progress.connect(self._on_mj_progress)
+        self.mj_worker.task_ready.connect(self._on_mj_task_ready)
+        self.mj_worker.error.connect(self._on_mj_error)
+        self.mj_worker.start()
+
+    def _on_mj_progress(self, progress: str, status: str):
+        """MJ 进度更新"""
+        try:
+            pct = int(progress.replace("%", ""))
+            self.mj_progress.setValue(pct)
+        except:
+            pass
+        self.mj_progress.setFormat(f"{status}: {progress}")
+        self.mj_status_label.setText(f"状态: {status}")
+
+    def _on_mj_task_ready(self, task_id: str, image_url: str, buttons: list):
+        """MJ 任务完成"""
+        self.mj_task_id = task_id
+        self.mj_buttons = buttons
+        
+        self.mj_progress.setValue(100)
+        self.mj_progress.setFormat("完成")
+        self.mj_status_label.setText(f"任务 ID: {task_id[:20]}...")
+        
+        # 更新预览图片
+        self._load_image_from_url(image_url)
+        
+        # 显示操作按钮
+        self.mj_actions_widget.setVisible(True)
+        self._update_mj_buttons(buttons)
+        
+        self.mj_start_btn.setText("🔄 重新处理")
+        self.mj_start_btn.setEnabled(True)
+
+    def _on_mj_error(self, error: str):
+        """MJ 错误"""
+        self.mj_progress.setValue(0)
+        self.mj_progress.setFormat("失败")
+        self.mj_status_label.setText(f"错误: {error}")
+        self.mj_start_btn.setEnabled(True)
+        QMessageBox.warning(self, "MJ 处理失败", error)
+
+    def _update_mj_buttons(self, buttons: list):
+        """更新 MJ 操作按钮状态"""
+        # 禁用所有按钮
+        for btn in self.mj_u_btns + self.mj_v_btns:
+            btn.setEnabled(False)
+        self.mj_reroll_btn.setEnabled(False)
+        
+        # 根据返回的按钮启用对应的 UI
+        for mj_btn in buttons:
+            label = mj_btn.get("label", "") if isinstance(mj_btn, dict) else mj_btn.label
+            emoji = mj_btn.get("emoji", "") if isinstance(mj_btn, dict) else mj_btn.emoji
+            
+            if label.startswith("U") and len(label) == 2:
+                idx = int(label[1]) - 1
+                if 0 <= idx < 4:
+                    self.mj_u_btns[idx].setEnabled(True)
+            elif label.startswith("V") and len(label) == 2:
+                idx = int(label[1]) - 1
+                if 0 <= idx < 4:
+                    self.mj_v_btns[idx].setEnabled(True)
+            elif emoji == "🔄" or "reroll" in (mj_btn.get("customId", "") if isinstance(mj_btn, dict) else mj_btn.custom_id).lower():
+                self.mj_reroll_btn.setEnabled(True)
+
+    def _on_mj_action_clicked(self, action_label: str):
+        """点击 MJ 操作按钮"""
+        if not self.mj_task_id or not self.mj_buttons:
+            return
+        
+        # 找到对应的 custom_id
+        custom_id = None
+        for mj_btn in self.mj_buttons:
+            label = mj_btn.get("label", "") if isinstance(mj_btn, dict) else mj_btn.label
+            emoji = mj_btn.get("emoji", "") if isinstance(mj_btn, dict) else mj_btn.emoji
+            btn_custom_id = mj_btn.get("customId", "") if isinstance(mj_btn, dict) else mj_btn.custom_id
+            
+            if action_label == "reroll" and (emoji == "🔄" or "reroll" in btn_custom_id.lower()):
+                custom_id = btn_custom_id
+                break
+            elif label == action_label:
+                custom_id = btn_custom_id
+                break
+        
+        if not custom_id:
+            QMessageBox.warning(self, "错误", f"找不到操作: {action_label}")
+            return
+        
+        # 执行 Action
+        from core.app import get_app_state
+        app_state = get_app_state()
+        api_key = app_state.config.api_key
+        base_url = app_state.config.base_url
+        
+        self.mj_progress.setValue(10)
+        self.mj_progress.setFormat(f"执行 {action_label}...")
+        self.mj_status_label.setText(f"正在执行 {action_label} 操作...")
+        
+        # 禁用按钮
+        for btn in self.mj_u_btns + self.mj_v_btns:
+            btn.setEnabled(False)
+        self.mj_reroll_btn.setEnabled(False)
+        
+        # 启动 Action 线程
+        self.mj_worker = MJActionThread(
+            api_key=api_key,
+            base_url=base_url,
+            task_id=self.mj_task_id,
+            custom_id=custom_id
+        )
+        self.mj_worker.progress.connect(self._on_mj_progress)
+        self.mj_worker.task_ready.connect(self._on_mj_task_ready)
+        self.mj_worker.error.connect(self._on_mj_error)
+        self.mj_worker.start()
+
+    def _load_image_from_url(self, url: str):
+        """从 URL 加载图片"""
+        try:
+            import requests
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+            
+            from PySide6.QtGui import QImage
+            image = QImage()
+            image.loadFromData(response.content)
+            pixmap = QPixmap.fromImage(image)
+            self.image_label.setPixmap(pixmap)
+        except Exception as e:
+            print(f"加载图片失败: {e}")
+
     def _edit_and_regenerate(self):
         """修改提示词并重新生成"""
         key = (self.verse_index, self.prompt_index)
@@ -706,23 +1129,42 @@ class ImagePreviewDialog(QDialog):
         if key in self.generated_images:
             current_prompt = self.generated_images[key].get('description', '')
 
-        new_prompt, ok = QInputDialog.getText(
-            self,
-            "修改图像提示词",
-            "请输入新的图像提示词 (英文):",
-            text=current_prompt,
-            minimum=20
-        )
+        # 使用自定义对话框（支持多行编辑）
+        from PySide6.QtWidgets import QTextEdit, QDialogButtonBox, QVBoxLayout, QLabel, QDialog
+        
+        edit_dialog = QDialog(self)
+        edit_dialog.setWindowTitle("修改图像提示词")
+        edit_dialog.setMinimumSize(600, 300)
+        
+        layout = QVBoxLayout(edit_dialog)
+        
+        # 说明
+        hint_label = QLabel("请编辑图像提示词（英文），详细描述画面元素：")
+        layout.addWidget(hint_label)
+        
+        # 多行文本编辑器
+        text_edit = QTextEdit()
+        text_edit.setPlainText(current_prompt)
+        text_edit.setPlaceholderText("A traditional Chinese ink painting depicting...")
+        layout.addWidget(text_edit)
+        
+        # 按钮
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(edit_dialog.accept)
+        buttons.rejected.connect(edit_dialog.reject)
+        layout.addWidget(buttons)
+        
+        if edit_dialog.exec() == QDialog.Accepted:
+            new_prompt = text_edit.toPlainText().strip()
+            if new_prompt:
+                # 更新提示词
+                if self.prompts:
+                    verse = self.prompts.get_verse(self.verse_index)
+                    if verse and 0 <= self.prompt_index < len(verse.descriptions):
+                        verse.descriptions[self.prompt_index].description = new_prompt
 
-        if ok and new_prompt:
-            # 更新提示词
-            if self.prompts:
-                verse = self.prompts.get_verse(self.verse_index)
-                if verse and 0 <= self.prompt_index < len(verse.descriptions):
-                    verse.descriptions[self.prompt_index].description = new_prompt
-
-            self.preview_regenerated.emit(self.verse_index, self.prompt_index, new_prompt)
-            self.accept()
+                self.preview_regenerated.emit(self.verse_index, self.prompt_index, new_prompt)
+                self.accept()
 
     def _generate_video(self):
         """生成视频"""
@@ -737,6 +1179,110 @@ class ImagePreviewDialog(QDialog):
 
             main_window.video_page.set_images_with_prompts([(self.path, video_prompt)])
             main_window.tab_widget.setCurrentIndex(3)
+
+
+class MJProcessingThread(QThread):
+    """MJ 处理线程（上传 + Imagine + 等待）"""
+    progress = Signal(str, str)  # progress, status
+    task_ready = Signal(str, str, list)  # task_id, image_url, buttons
+    error = Signal(str)
+    
+    def __init__(self, api_key: str, base_url: str, image_path: str):
+        super().__init__()
+        self.api_key = api_key
+        self.base_url = base_url
+        self.image_path = image_path
+    
+    def run(self):
+        try:
+            from api.mj_client import MidjourneyClient
+            
+            with MidjourneyClient(self.api_key, self.base_url) as client:
+                # 上传图片
+                self.progress.emit("10%", "上传图片")
+                image_url = client.upload_image(Path(self.image_path))
+                
+                # 提交 Imagine（使用图片作为垫图）
+                self.progress.emit("20%", "提交任务")
+                task_id = client.submit_imagine(
+                    prompt=image_url,  # 以图片 URL 作为垫图
+                    ref_images=None
+                )
+                
+                # 等待完成
+                def on_progress(progress, status):
+                    self.progress.emit(progress, status)
+                
+                result = client.wait_for_completion(
+                    task_id,
+                    timeout=600,
+                    poll_interval=5,
+                    progress_callback=on_progress
+                )
+                
+                # 转换 buttons 为 dict 列表
+                buttons = []
+                for btn in result.buttons:
+                    buttons.append({
+                        "customId": btn.custom_id,
+                        "label": btn.label,
+                        "emoji": btn.emoji
+                    })
+                
+                self.task_ready.emit(result.task_id, result.image_url, buttons)
+                
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class MJActionThread(QThread):
+    """MJ Action 执行线程"""
+    progress = Signal(str, str)  # progress, status
+    task_ready = Signal(str, str, list)  # task_id, image_url, buttons
+    error = Signal(str)
+    
+    def __init__(self, api_key: str, base_url: str, task_id: str, custom_id: str):
+        super().__init__()
+        self.api_key = api_key
+        self.base_url = base_url
+        self.task_id = task_id
+        self.custom_id = custom_id
+    
+    def run(self):
+        try:
+            from api.mj_client import MidjourneyClient
+            
+            with MidjourneyClient(self.api_key, self.base_url) as client:
+                # 提交 Action
+                self.progress.emit("10%", "提交操作")
+                new_task_id = client.submit_action(self.task_id, self.custom_id)
+                
+                # 等待完成
+                def on_progress(progress, status):
+                    self.progress.emit(progress, status)
+                
+                result = client.wait_for_completion(
+                    new_task_id,
+                    timeout=600,
+                    poll_interval=5,
+                    progress_callback=on_progress
+                )
+                
+                # 转换 buttons 为 dict 列表
+                buttons = []
+                for btn in result.buttons:
+                    buttons.append({
+                        "customId": btn.custom_id,
+                        "label": btn.label,
+                        "emoji": btn.emoji
+                    })
+                
+                self.task_ready.emit(result.task_id, result.image_url, buttons)
+                
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 
 
 class ImageGenerationThread(QThread):

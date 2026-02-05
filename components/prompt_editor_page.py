@@ -27,6 +27,7 @@ class PromptEditorPage(QWidget):
     """
 
     prompts_changed = Signal(object)  # 提示词变更信号
+    music_transfer_requested = Signal(object)  # 请求传递音乐提示词到音乐生成页面
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -97,6 +98,66 @@ class PromptEditorPage(QWidget):
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
 
         layout.addWidget(self.table)
+        
+        # 音乐提示词显示区域
+        self.music_group = QGroupBox("🎵 Suno AI 音乐提示词")
+        music_layout = QVBoxLayout()
+        
+        # 风格和标题
+        from PySide6.QtWidgets import QFormLayout, QTextEdit
+        info_layout = QFormLayout()
+        
+        self.music_title_label = QLabel("（生成后显示）")
+        self.music_title_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        info_layout.addRow("🎼 标题:", self.music_title_label)
+        
+        self.music_style_label = QLabel("（生成后显示）")
+        self.music_style_label.setWordWrap(True)
+        self.music_style_label.setStyleSheet("color: #666;")
+        info_layout.addRow("🎸 风格:", self.music_style_label)
+        
+        music_layout.addLayout(info_layout)
+        
+        # 歌词标签页
+        from PySide6.QtWidgets import QTabWidget
+        self.lyrics_tabs = QTabWidget()
+        
+        self.lyrics_cn_edit = QTextEdit()
+        self.lyrics_cn_edit.setPlaceholderText("中文歌词将在生成提示词后显示...")
+        self.lyrics_cn_edit.setMaximumHeight(150)
+        self.lyrics_tabs.addTab(self.lyrics_cn_edit, "🇨🇳 中文歌词")
+        
+        self.lyrics_en_edit = QTextEdit()
+        self.lyrics_en_edit.setPlaceholderText("English lyrics will be shown after generation...")
+        self.lyrics_en_edit.setMaximumHeight(150)
+        self.lyrics_tabs.addTab(self.lyrics_en_edit, "🇬🇧 英文歌词")
+        
+        music_layout.addWidget(self.lyrics_tabs)
+        
+        # 音乐生成按钮
+        music_btn_layout = QHBoxLayout()
+        music_btn_layout.addStretch()
+        
+        self.copy_music_btn = QPushButton("📋 复制音乐提示词")
+        self.copy_music_btn.clicked.connect(self._copy_music_prompt)
+        self.copy_music_btn.setEnabled(False)
+        music_btn_layout.addWidget(self.copy_music_btn)
+        
+        self.edit_music_btn = QPushButton("✏️ 编辑音乐提示词")
+        self.edit_music_btn.clicked.connect(self._edit_music_prompt)
+        self.edit_music_btn.setEnabled(False)
+        music_btn_layout.addWidget(self.edit_music_btn)
+        
+        self.send_music_btn = QPushButton("🎵 发送到音乐生成")
+        self.send_music_btn.clicked.connect(self._send_to_music_page)
+        self.send_music_btn.setEnabled(False)
+        self.send_music_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+        music_btn_layout.addWidget(self.send_music_btn)
+        
+        music_layout.addLayout(music_btn_layout)
+        
+        self.music_group.setLayout(music_layout)
+        layout.addWidget(self.music_group)
 
         # 底部统计信息
         self.stats_label = QLabel("无数据")
@@ -361,6 +422,110 @@ class PromptEditorPage(QWidget):
         """设置提示词数据"""
         self.prompts = prompts
         self._refresh_table()
+        self._update_music_display()
+
+    def _update_music_display(self):
+        """更新音乐提示词显示"""
+        if self.prompts and self.prompts.music_prompt:
+            music = self.prompts.music_prompt
+            self.music_title_label.setText(music.title or "无标题")
+            self.music_style_label.setText(music.style_prompt or "未设置")
+            self.lyrics_cn_edit.setPlainText(music.lyrics_cn or "")
+            self.lyrics_en_edit.setPlainText(music.lyrics_en or "")
+            self.copy_music_btn.setEnabled(True)
+            self.edit_music_btn.setEnabled(True)
+            self.send_music_btn.setEnabled(True)
+        else:
+            self.music_title_label.setText("（生成后显示）")
+            self.music_style_label.setText("（生成后显示）")
+            self.lyrics_cn_edit.clear()
+            self.lyrics_en_edit.clear()
+            self.copy_music_btn.setEnabled(False)
+            self.edit_music_btn.setEnabled(False)
+            self.send_music_btn.setEnabled(False)
+
+    def _send_to_music_page(self):
+        """发送音乐提示词到音乐生成页面"""
+        if self.prompts and self.prompts.music_prompt:
+            self.music_transfer_requested.emit(self.prompts.music_prompt)
+
+    def _copy_music_prompt(self):
+        """复制音乐提示词到剪贴板"""
+        if not self.prompts or not self.prompts.music_prompt:
+            return
+        
+        from PySide6.QtWidgets import QApplication
+        music = self.prompts.music_prompt
+        
+        text = f"""=== Suno AI Music Prompt ===
+Title: {music.title}
+Style: {music.style_prompt}
+
+=== 中文歌词 ===
+{music.lyrics_cn}
+
+=== English Lyrics ===
+{music.lyrics_en}
+"""
+        QApplication.clipboard().setText(text)
+        QMessageBox.information(self, "复制成功", "音乐提示词已复制到剪贴板")
+
+    def _edit_music_prompt(self):
+        """编辑音乐提示词"""
+        if not self.prompts:
+            return
+        
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLineEdit, QTextEdit, QDialogButtonBox
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("编辑音乐提示词")
+        dialog.setMinimumSize(600, 500)
+        
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        
+        # 标题
+        title_edit = QLineEdit()
+        title_edit.setText(self.prompts.music_prompt.title if self.prompts.music_prompt else "")
+        form.addRow("🎼 标题:", title_edit)
+        
+        # 风格
+        style_edit = QLineEdit()
+        style_edit.setText(self.prompts.music_prompt.style_prompt if self.prompts.music_prompt else "")
+        style_edit.setPlaceholderText("Traditional Chinese, Guzheng, Ethereal Female Vocals, Melancholic...")
+        form.addRow("🎸 风格:", style_edit)
+        
+        layout.addLayout(form)
+        
+        # 中文歌词
+        layout.addWidget(QLabel("🇨🇳 中文歌词:"))
+        lyrics_cn_edit = QTextEdit()
+        lyrics_cn_edit.setPlainText(self.prompts.music_prompt.lyrics_cn if self.prompts.music_prompt else "")
+        layout.addWidget(lyrics_cn_edit)
+        
+        # 英文歌词
+        layout.addWidget(QLabel("🇬🇧 英文歌词:"))
+        lyrics_en_edit = QTextEdit()
+        lyrics_en_edit.setPlainText(self.prompts.music_prompt.lyrics_en if self.prompts.music_prompt else "")
+        layout.addWidget(lyrics_en_edit)
+        
+        # 按钮
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        
+        if dialog.exec() == QDialog.Accepted:
+            from schemas.poetry import MusicPrompt
+            self.prompts.music_prompt = MusicPrompt(
+                title=title_edit.text(),
+                style_prompt=style_edit.text(),
+                lyrics_cn=lyrics_cn_edit.toPlainText(),
+                lyrics_en=lyrics_en_edit.toPlainText(),
+                instrumental=False
+            )
+            self._update_music_display()
+            self.prompts_changed.emit(self.prompts)
 
     def get_prompts(self) -> Optional[PoetryPromptsResponse]:
         """获取当前提示词数据"""
@@ -371,3 +536,4 @@ class PromptEditorPage(QWidget):
         if self.prompts is None:
             return []
         return self.prompts.all_descriptions()
+

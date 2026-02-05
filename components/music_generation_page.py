@@ -84,29 +84,59 @@ class MusicGenerationPage(QWidget):
         self.mode_combo.addItem("灵感模式", "inspiration")
         self.mode_combo.addItem("自定义模式", "custom")
         self.mode_combo.addItem("续写模式", "extend")
+        self.mode_combo.addItem("翻唱模式", "cover")
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
 
         layout.addLayout(mode_layout)
+
+        # 模型选择
+        model_layout = QHBoxLayout()
+        model_layout.addWidget(QLabel("模型:"))
+        self.model_combo = QComboBox()
+        from api.suno_client import SunoClient
+        for model_id, model_name in SunoClient.get_available_models().items():
+            self.model_combo.addItem(model_name, model_id)
+        # 默认选择 chirp-v4
+        self.model_combo.setCurrentIndex(2)
+        model_layout.addWidget(self.model_combo)
+        layout.addLayout(model_layout)
+
+        # 人声性别选择
+        gender_layout = QHBoxLayout()
+        gender_layout.addWidget(QLabel("人声:"))
+        self.gender_combo = QComboBox()
+        for gender_id, gender_name in SunoClient.get_vocal_genders().items():
+            self.gender_combo.addItem(gender_name, gender_id)
+        gender_layout.addWidget(self.gender_combo)
+        layout.addLayout(gender_layout)
 
         # 风格标签
         tags_layout = QVBoxLayout()
         tags_layout.addWidget(QLabel("风格标签 (可多选):"))
 
         self.tags_list = QListWidget()
-        self.tags_list.setMaximumHeight(120)
+        self.tags_list.setMaximumHeight(100)
         self.tags_list.setSelectionMode(QListWidget.MultiSelection)
 
-        from api.suno_client import SunoClient
         for tag in SunoClient.get_style_tags():
             self.tags_list.addItem(tag)
 
         # 默认选中一些
         for i in [0, 1, 2]:
-            self.tags_list.item(i).setSelected(True)
+            if i < self.tags_list.count():
+                self.tags_list.item(i).setSelected(True)
 
         tags_layout.addWidget(self.tags_list)
         layout.addLayout(tags_layout)
+
+        # 排除风格
+        neg_layout = QHBoxLayout()
+        neg_layout.addWidget(QLabel("排除风格:"))
+        self.negative_tags_edit = QLineEdit()
+        self.negative_tags_edit.setPlaceholderText("不需要的风格,用逗号分隔")
+        neg_layout.addWidget(self.negative_tags_edit)
+        layout.addLayout(neg_layout)
 
         # 歌曲标题
         title_layout = QHBoxLayout()
@@ -121,32 +151,50 @@ class MusicGenerationPage(QWidget):
         self.lyrics_edit = QTextEdit()
         self.lyrics_edit.setPlaceholderText(
             "灵感模式: 输入音乐主题描述\n"
-            "自定义模式: 输入完整歌词\n"
+            "自定义模式: 输入完整歌词 (支持 [Verse], [Chorus] 等标签)\n"
             "例如: [Verse]\n月光如水照花间\n春风轻拂柳丝寒..."
         )
-        self.lyrics_edit.setMaximumHeight(150)
+        self.lyrics_edit.setMaximumHeight(120)
         layout.addWidget(self.lyrics_edit)
 
         # 续写模式设置
         self.extend_group = QGroupBox("续写设置")
         extend_layout = QFormLayout_()
         self.extend_id_edit = QLineEdit()
+        self.extend_id_edit.setPlaceholderText("从任务列表点击'续写'按钮自动填充")
         self.extend_time_edit = QLineEdit("30")
+        self.extend_time_edit.setPlaceholderText("从第几秒开始续写")
         extend_layout.addRow("续写歌曲 ID:", self.extend_id_edit)
         extend_layout.addRow("起始时间(秒):", self.extend_time_edit)
         self.extend_group.setLayout(extend_layout)
         self.extend_group.setVisible(False)
         layout.addWidget(self.extend_group)
 
+        # 翻唱模式设置
+        self.cover_group = QGroupBox("翻唱设置")
+        cover_layout = QFormLayout_()
+        self.cover_clip_id_edit = QLineEdit()
+        self.cover_clip_id_edit.setPlaceholderText("原曲ID或上传的音频ID")
+        cover_layout.addRow("翻唱原曲 ID:", self.cover_clip_id_edit)
+        self.cover_group.setLayout(cover_layout)
+        self.cover_group.setVisible(False)
+        layout.addWidget(self.cover_group)
+
+        # 按钮区域
+        btn_layout = QHBoxLayout()
+        
         # 生成歌词按钮
         self.gen_lyrics_btn = QPushButton("生成歌词")
         self.gen_lyrics_btn.clicked.connect(self._generate_lyrics)
-        layout.addWidget(self.gen_lyrics_btn)
+        btn_layout.addWidget(self.gen_lyrics_btn)
 
         # 生成音乐按钮
-        self.generate_btn = QPushButton("生成音乐")
+        self.generate_btn = QPushButton("🎵 生成音乐")
+        self.generate_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.generate_btn.clicked.connect(self._generate_music)
-        layout.addWidget(self.generate_btn)
+        btn_layout.addWidget(self.generate_btn)
+
+        layout.addLayout(btn_layout)
 
         layout.addStretch()
 
@@ -159,8 +207,8 @@ class MusicGenerationPage(QWidget):
 
         # 任务表格
         self.task_table = QTableWidget()
-        self.task_table.setColumnCount(5)
-        self.task_table.setHorizontalHeaderLabels(["标题", "状态", "时长", "操作", ""])
+        self.task_table.setColumnCount(6)
+        self.task_table.setHorizontalHeaderLabels(["标题", "状态", "时长", "Clip ID", "操作", ""])
 
         self.task_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.task_table.setAlternatingRowColors(True)
@@ -171,6 +219,8 @@ class MusicGenerationPage(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.Fixed)
+        self.task_table.setColumnWidth(5, 0)  # 隐藏任务ID列
 
         layout.addWidget(self.task_table)
 
@@ -236,11 +286,20 @@ class MusicGenerationPage(QWidget):
         """模式变化"""
         mode = self.mode_combo.currentData()
 
-        if mode == "extend":
-            self.extend_group.setVisible(True)
+        # 显示/隐藏续写设置
+        self.extend_group.setVisible(mode == "extend")
+        
+        # 显示/隐藏翻唱设置
+        self.cover_group.setVisible(mode == "cover")
+        
+        # 翻唱模式自动切换到专用模型
+        if mode == "cover":
+            for i in range(self.model_combo.count()):
+                if "tau" in self.model_combo.itemData(i):
+                    self.model_combo.setCurrentIndex(i)
+                    break
             self.gen_lyrics_btn.setEnabled(False)
         else:
-            self.extend_group.setVisible(False)
             self.gen_lyrics_btn.setEnabled(True)
 
     def _generate_lyrics(self):
@@ -301,21 +360,34 @@ class MusicGenerationPage(QWidget):
         title = self.title_edit.text().strip() or "未命名"
         prompt = self.lyrics_edit.toPlainText().strip()
         mode = self.mode_combo.currentData()
+        model = self.model_combo.currentData()
+        gender = self.gender_combo.currentData() or None
+        negative_tags = self.negative_tags_edit.text().strip()
 
-        if not prompt:
+        if not prompt and mode not in ["extend", "cover"]:
             QMessageBox.warning(self, "输入错误", "请输入歌词或描述")
             return
 
         # 续写模式参数
         continue_clip_id = None
         continue_at = None
+        cover_clip_id = None
 
         if mode == "extend":
             continue_clip_id = self.extend_id_edit.text().strip()
+            if not continue_clip_id:
+                QMessageBox.warning(self, "输入错误", "请输入续写歌曲 ID")
+                return
             try:
                 continue_at = float(self.extend_time_edit.text())
             except ValueError:
                 QMessageBox.warning(self, "输入错误", "续写起始时间必须是数字")
+                return
+        
+        if mode == "cover":
+            cover_clip_id = self.cover_clip_id_edit.text().strip()
+            if not cover_clip_id:
+                QMessageBox.warning(self, "输入错误", "请输入翻唱原曲 ID")
                 return
 
         # 启动生成线程
@@ -328,8 +400,12 @@ class MusicGenerationPage(QWidget):
             tags=tags,
             prompt=prompt,
             mode=mode,
+            model=model,
+            gender=gender,
+            negative_tags=negative_tags,
             continue_clip_id=continue_clip_id,
-            continue_at=continue_at
+            continue_at=continue_at,
+            cover_clip_id=cover_clip_id
         )
         self._music_thread.task_submitted.connect(self._on_task_submitted)
         self._music_thread.finished.connect(self._on_music_generation_finished)
@@ -362,26 +438,67 @@ class MusicGenerationPage(QWidget):
         duration_text = f"{task.clips[0].duration:.0f}s" if task.clips and task.clips[0].duration else "-"
         self.task_table.setItem(row, 2, QTableWidgetItem(duration_text))
 
+        # Clip ID (用于续写)
+        clip_id = task.clips[0].id if task.clips else "-"
+        clip_id_item = QTableWidgetItem(clip_id[:12] + "..." if len(clip_id) > 12 else clip_id)
+        clip_id_item.setToolTip(clip_id)  # 完整ID显示在tooltip
+        self.task_table.setItem(row, 3, clip_id_item)
+
         # 操作按钮
         btn_widget = QWidget()
         btn_layout = QHBoxLayout(btn_widget)
-        btn_layout.setContentsMargins(5, 2, 5, 2)
+        btn_layout.setContentsMargins(2, 2, 2, 2)
+        btn_layout.setSpacing(2)
 
-        play_btn = QPushButton("播放")
-        play_btn.setMaximumWidth(50)
-        play_btn.clicked.connect(lambda: self._play_task(row))
+        play_btn = QPushButton("▶")
+        play_btn.setMaximumWidth(30)
+        play_btn.setToolTip("播放")
+        play_btn.clicked.connect(lambda checked, r=row: self._play_task(r))
         btn_layout.addWidget(play_btn)
 
-        download_btn = QPushButton("下载")
-        download_btn.setMaximumWidth(50)
-        download_btn.clicked.connect(lambda: self._download_task(row))
+        download_btn = QPushButton("⬇")
+        download_btn.setMaximumWidth(30)
+        download_btn.setToolTip("下载")
+        download_btn.clicked.connect(lambda checked, r=row: self._download_task(r))
         btn_layout.addWidget(download_btn)
 
-        self.task_table.setCellWidget(row, 3, btn_widget)
+        extend_btn = QPushButton("↻")
+        extend_btn.setMaximumWidth(30)
+        extend_btn.setToolTip("续写此歌曲")
+        extend_btn.clicked.connect(lambda checked, r=row: self._extend_task(r))
+        btn_layout.addWidget(extend_btn)
+
+        self.task_table.setCellWidget(row, 4, btn_widget)
 
         # 任务ID（隐藏）
         id_item = QTableWidgetItem(task.task_id)
-        self.task_table.setItem(row, 4, id_item)
+        self.task_table.setItem(row, 5, id_item)
+
+    def _extend_task(self, row: int):
+        """续写指定任务的音乐"""
+        task_id = self.task_table.item(row, 5).text()
+        task = next((t for t in self.music_tasks if t.task_id == task_id), None)
+
+        if task and task.clips:
+            clip = task.get_primary_clip()
+            if clip and clip.id:
+                # 切换到续写模式
+                self.mode_combo.setCurrentIndex(2)  # 续写模式
+                # 填充clip_id
+                self.extend_id_edit.setText(clip.id)
+                # 设置起始时间为歌曲时长（续写从结尾开始）
+                if clip.duration:
+                    self.extend_time_edit.setText(str(int(clip.duration)))
+                QMessageBox.information(
+                    self, 
+                    "续写模式已启动", 
+                    f"已选择歌曲:\n• 标题: {clip.title}\n• Clip ID: {clip.id[:20]}...\n• 时长: {clip.duration:.0f}秒\n\n"
+                    f"请输入续写歌词，然后点击'生成音乐'！"
+                )
+            else:
+                QMessageBox.warning(self, "无法续写", "此任务尚未生成完成或没有有效的Clip ID")
+        else:
+            QMessageBox.warning(self, "无法续写", "请等待音乐生成完成后再续写")
 
     def _set_status_color(self, item: QTableWidgetItem, status: MusicTaskStatus):
         """设置状态颜色"""
@@ -437,7 +554,7 @@ class MusicGenerationPage(QWidget):
     def _update_task_in_table(self, task: MusicTask):
         """更新表格中的任务"""
         for row in range(self.task_table.rowCount()):
-            if self.task_table.item(row, 4).text() == task.task_id:
+            if self.task_table.item(row, 5).text() == task.task_id:
                 # 更新状态
                 status_item = self.task_table.item(row, 1)
                 status_item.setText(task.status.value)
@@ -448,11 +565,18 @@ class MusicGenerationPage(QWidget):
                     duration_item = self.task_table.item(row, 2)
                     duration_item.setText(f"{task.clips[0].duration:.0f}s")
 
+                # 更新Clip ID
+                if task.clips and task.clips[0].id:
+                    clip_id = task.clips[0].id
+                    clip_id_item = self.task_table.item(row, 3)
+                    clip_id_item.setText(clip_id[:12] + "..." if len(clip_id) > 12 else clip_id)
+                    clip_id_item.setToolTip(clip_id)
+
                 break
 
     def _play_task(self, row: int):
         """播放任务的音乐"""
-        task_id = self.task_table.item(row, 4).text()
+        task_id = self.task_table.item(row, 5).text()
         task = next((t for t in self.music_tasks if t.task_id == task_id), None)
 
         if task and task.clips:
@@ -497,7 +621,7 @@ class MusicGenerationPage(QWidget):
 
     def _download_task(self, row: int):
         """下载任务的音乐"""
-        task_id = self.task_table.item(row, 4).text()
+        task_id = self.task_table.item(row, 5).text()
         task = next((t for t in self.music_tasks if t.task_id == task_id), None)
 
         if task and task.clips:
@@ -506,17 +630,76 @@ class MusicGenerationPage(QWidget):
                 directory = QFileDialog.getExistingDirectory(self, "选择保存目录")
                 if directory:
                     try:
+                        from utils.file_naming import FileNaming
                         client = self.app_state.music_client
-                        filename = f"{task.title}.mp3"
+                        
+                        # 使用规范化文件名
+                        filename = FileNaming.generate_music_filename(
+                            title=task.title,
+                            style=task.tags
+                        )
                         save_path = Path(directory) / filename
                         client.download_audio(clip.audio_url, save_path)
-                        QMessageBox.information(self, "下载成功", f"音乐已保存到 {save_path}")
+                        QMessageBox.information(self, "下载成功", f"音乐已保存到:\n{save_path}")
                     except Exception as e:
                         QMessageBox.critical(self, "下载失败", f"下载失败: {str(e)}")
             else:
                 QMessageBox.information(self, "提示", "音乐尚未生成完成")
         else:
             QMessageBox.information(self, "提示", "音乐尚未生成完成")
+    
+    def set_music_prompt(self, music_prompt):
+        """接收并填充音乐提示词
+        
+        Args:
+            music_prompt: MusicPrompt 对象，包含 style_prompt, title, lyrics_cn, lyrics_en
+        """
+        if not music_prompt:
+            return
+        
+        # 填充标题
+        if music_prompt.title:
+            self.title_edit.setText(music_prompt.title)
+        
+        # 解析风格标签并选中
+        if music_prompt.style_prompt:
+            # 取消所有选择
+            for i in range(self.tags_list.count()):
+                self.tags_list.item(i).setSelected(False)
+            
+            # 匹配并选中标签
+            style_tags = [t.strip().lower() for t in music_prompt.style_prompt.split(',')]
+            for i in range(self.tags_list.count()):
+                item = self.tags_list.item(i)
+                item_text = item.text().lower()
+                # 检查是否有任何风格标签匹配
+                for tag in style_tags:
+                    if tag in item_text or item_text in tag:
+                        item.setSelected(True)
+                        break
+        
+        # 填充歌词 - 中英双语格式
+        lyrics_text = ""
+        if music_prompt.lyrics_cn:
+            lyrics_text += music_prompt.lyrics_cn
+        if music_prompt.lyrics_en:
+            if lyrics_text:
+                lyrics_text += "\n\n--- English Version ---\n\n"
+            lyrics_text += music_prompt.lyrics_en
+        
+        if lyrics_text:
+            self.lyrics_edit.setPlainText(lyrics_text)
+        
+        # 显示提示
+        QMessageBox.information(
+            self,
+            "音乐提示词已导入",
+            f"已导入音乐提示词:\n"
+            f"• 标题: {music_prompt.title or '未设置'}\n"
+            f"• 风格: {music_prompt.style_prompt[:50] + '...' if len(music_prompt.style_prompt) > 50 else music_prompt.style_prompt}\n"
+            f"• 歌词已填充\n\n"
+            f"请根据需要调整后点击'生成音乐'！"
+        )
 
 
 class QFormLayout_(QVBoxLayout):
@@ -556,22 +739,30 @@ class LyricsGenerationThread(QThread):
 
 
 class MusicGenerationThread(QThread):
-    """音乐生成线程"""
+    """音乐生成线程 - 支持所有模式"""
 
     task_submitted = Signal(object)
     finished = Signal()
 
     def __init__(self, app_state, title: str, tags: str, prompt: str,
-                 mode: str, continue_clip_id: Optional[str] = None,
-                 continue_at: Optional[float] = None):
+                 mode: str, model: str = "chirp-v4",
+                 gender: Optional[str] = None,
+                 negative_tags: str = "",
+                 continue_clip_id: Optional[str] = None,
+                 continue_at: Optional[float] = None,
+                 cover_clip_id: Optional[str] = None):
         super().__init__()
         self.app_state = app_state
         self.title = title
         self.tags = tags
         self.prompt = prompt
         self.mode = mode
+        self.model = model
+        self.gender = gender
+        self.negative_tags = negative_tags
         self.continue_clip_id = continue_clip_id
         self.continue_at = continue_at
+        self.cover_clip_id = cover_clip_id
 
     def run(self):
         """运行生成任务"""
@@ -579,27 +770,53 @@ class MusicGenerationThread(QThread):
             from datetime import datetime
 
             client = self.app_state.music_client
-            task_id = client.generate_music(
-                prompt=self.prompt,
-                tags=self.tags,
-                title=self.title,
-                continue_clip_id=self.continue_clip_id,
-                continue_at=self.continue_at
-            )
+            task_id = None
 
-            task = MusicTask(
-                task_id=task_id,
-                title=self.title,
-                tags=self.tags,
-                prompt=self.prompt,
-                model="chirp-v4",
-                created_at=datetime.now()
-            )
-            task.update_status(MusicTaskStatus.SUBMITTED)
+            if self.mode == "cover" and self.cover_clip_id:
+                # 翻唱模式
+                task_id = client.generate_cover(
+                    cover_clip_id=self.cover_clip_id,
+                    prompt=self.prompt,
+                    tags=self.tags,
+                    title=self.title,
+                    model=self.model
+                )
+            elif self.mode == "extend" and self.continue_clip_id:
+                # 续写模式
+                task_id = client.generate_extend(
+                    clip_id=self.continue_clip_id,
+                    continue_at=self.continue_at,
+                    prompt=self.prompt,
+                    tags=self.tags,
+                    title=self.title,
+                    model=self.model
+                )
+            else:
+                # 自定义/灵感模式
+                task_id = client.generate_custom(
+                    title=self.title,
+                    lyrics=self.prompt,
+                    tags=self.tags,
+                    model=self.model,
+                    vocal_gender=self.gender,
+                    negative_tags=self.negative_tags
+                )
 
-            self.task_submitted.emit(task)
+            if task_id:
+                task = MusicTask(
+                    task_id=task_id,
+                    title=self.title,
+                    tags=self.tags,
+                    prompt=self.prompt,
+                    model=self.model,
+                    created_at=datetime.now()
+                )
+                task.update_status(MusicTaskStatus.SUBMITTED)
+
+                self.task_submitted.emit(task)
 
         except Exception as e:
             self.app_state.logger.error(f"提交音乐任务失败: {e}")
 
         self.finished.emit()
+

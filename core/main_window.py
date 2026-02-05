@@ -61,6 +61,9 @@ class MainWindow(QMainWindow):
 
         # 提示词编辑 -> 图像生成
         self.prompt_page.prompts_changed.connect(self.image_page.set_prompts)
+        
+        # 提示词编辑 -> 音乐生成（传递音乐提示词）
+        self.prompt_page.music_transfer_requested.connect(self._on_music_transfer)
 
         # 图像生成 -> 视频队列
         self.image_page.images_generated.connect(self._on_images_generated)
@@ -70,11 +73,10 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_prompts_generated(self, prompts):
-        """提示词生成完成，传递到编辑页面和图像页面"""
+        """提示词生成完成"""
         self.prompt_page.set_prompts(prompts)
-        self.image_page.set_prompts(prompts)
-        self.tab_widget.setCurrentIndex(1)  # 切换到提示词编辑
-        self.status_bar.showMessage("提示词已生成，请编辑确认", 3000)
+        self.tab_widget.setCurrentIndex(1)  # 切换到提示词编辑页
+        self.statusBar().showMessage("提示词已生成，请编辑确认", 3000)
 
     @Slot(object)
     def _on_prompts_changed(self, prompts):
@@ -85,57 +87,78 @@ class MainWindow(QMainWindow):
     def _on_images_generated(self, image_data):
         """图像生成完成，传递到视频队列 - image_data 为 [(path, video_prompt), ...]"""
         self.video_page.set_images_with_prompts(image_data)
-        self.status_bar.showMessage(f"已生成 {len(image_data)} 张图片，可进入视频队列", 3000)
+        self.statusBar().showMessage(f"已生成 {len(image_data)} 张图片，可进入视频队列", 3000)
 
     @Slot(list)
     def _on_generate_video_requested(self, image_data):
         """从图像画廊发起的视频生成请求 - image_data 为 [(path, video_prompt), ...]"""
         self.video_page.set_images_with_prompts(image_data)
         self.tab_widget.setCurrentIndex(3)  # 切换到视频队列页面
-        self.status_bar.showMessage(f"已加载 {len(image_data)} 张图片到视频队列", 3000)
+        self.statusBar().showMessage(f"已加载 {len(image_data)} 张图片到视频队列", 3000)
+
+    @Slot(object)
+    def _on_music_transfer(self, music_prompt):
+        """从提示词编辑页面发起的音乐提示词传递"""
+        self.music_page.set_music_prompt(music_prompt)
+        self.tab_widget.setCurrentIndex(4)  # 切换到音乐生成页面
+        self.statusBar().showMessage("音乐提示词已传递到音乐生成页面", 3000)
 
     def _init_ui(self):
         """初始化 UI"""
         self.setWindowTitle("诗韵画境 - Poetry to Image")
         self.setMinimumSize(1200, 800)
 
-        # 创建中央部件
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        # 主布局
-        main_layout = QVBoxLayout(central_widget)
+        # 创建主容器（水平布局：侧边栏 + 标签页）
+        main_container = QWidget()
+        main_layout = QHBoxLayout(main_container)
         main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # 历史记录侧边栏
+        from components.history_sidebar import HistorySidebar
+        self.history_sidebar = HistorySidebar()
+        self.history_sidebar.setMaximumWidth(300)
+        self.history_sidebar.setMinimumWidth(250)
+        self.history_sidebar.session_selected.connect(self._on_session_restored)
+        main_layout.addWidget(self.history_sidebar)
+
+        # 标签页容器
+        tab_container = QWidget()
+        tab_layout = QVBoxLayout(tab_container)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
 
         # 创建标签页
         self.tab_widget = QTabWidget()
         self.tab_widget.setTabPosition(QTabWidget.North)
-        self.tab_widget.setDocumentMode(True)
-        self.tab_widget.setMovable(True)
-
-        # 创建各个页面
-        self.poetry_page = PoetryInputPage()
-        self.prompt_page = PromptEditorPage()
-        self.image_page = ImageGalleryPage()
-        self.video_page = VideoQueuePage()
-        self.music_page = MusicGenerationPage()
-        self.settings_page = SettingsPanel()
-
-        # 添加页面到标签页
-        self.tab_widget.addTab(self.poetry_page, "诗词输入")
-        self.tab_widget.addTab(self.prompt_page, "提示词编辑")
-        self.tab_widget.addTab(self.image_page, "图像生成")
-        self.tab_widget.addTab(self.video_page, "视频队列")
-        self.tab_widget.addTab(self.music_page, "音乐生成")
-        self.tab_widget.addTab(self.settings_page, "设置")
-
-        # 连接页面切换信号
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
 
-        # 连接页面间信号，实现数据流转
+        # 添加各个页面（不传参数，页面内部会调用 get_app_state()）
+        self.poetry_page = PoetryInputPage()
+        self.tab_widget.addTab(self.poetry_page, "诗词输入")
+
+        self.prompt_page = PromptEditorPage()
+        self.tab_widget.addTab(self.prompt_page, "提示词编辑")
+
+        self.image_page = ImageGalleryPage()
+        self.tab_widget.addTab(self.image_page, "图像生成")
+
+        self.video_page = VideoQueuePage()
+        self.tab_widget.addTab(self.video_page, "视频队列")
+
+        self.music_page = MusicGenerationPage()
+        self.tab_widget.addTab(self.music_page, "音乐生成")
+
+        self.settings_panel = SettingsPanel()
+        self.tab_widget.addTab(self.settings_panel, "设置")
+
+        # 连接页面信号
         self._connect_page_signals()
 
-        main_layout.addWidget(self.tab_widget)
+        tab_layout.addWidget(self.tab_widget)
+        main_layout.addWidget(tab_container, stretch=1)
+        
+        # 设置中心部件
+        self.setCentralWidget(main_container)
 
     def _create_menu_bar(self):
         """创建菜单栏"""
@@ -185,6 +208,13 @@ class MainWindow(QMainWindow):
 
         # 视图菜单
         view_menu = menubar.addMenu("视图(&V)")
+
+        # 主题切换
+        self.theme_action = QAction("🌙 切换到暗黑模式", self)
+        self.theme_action.triggered.connect(self._toggle_theme)
+        view_menu.addAction(self.theme_action)
+        
+        view_menu.addSeparator()
 
         # 跳转到各个页面
         goto_poetry_action = QAction("诗词输入(&P)", self)
@@ -244,9 +274,10 @@ class MainWindow(QMainWindow):
 
     def _create_status_bar(self):
         """创建状态栏"""
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("就绪")
+        # 创建状态栏
+        self.setStatusBar(QStatusBar()) # Ensure a status bar is set
+        statusBar = self.statusBar()
+        statusBar.showMessage("就绪", 3000)
 
     # ==================== 信号处理 ====================
 
@@ -259,20 +290,20 @@ class MainWindow(QMainWindow):
     def _on_session_changed(self):
         """会话变更处理"""
         session_id = self.app_state.current_session_id
-        self.status_bar.showMessage(f"当前会话: {session_id}", 3000)
+        self.statusBar().showMessage(f"当前会话: {session_id}", 3000)
 
     @Slot(int)
     def _on_tab_changed(self, index: int):
         """标签页切换处理"""
         tab_name = self.tab_widget.tabText(index)
-        self.status_bar.showMessage(f"切换到: {tab_name}", 2000)
+        self.statusBar().showMessage(f"切换到: {tab_name}", 2000)
 
         # 切换到图像生成页面时，传递提示词数据
         if index == 2:  # 图像生成页面
             prompts = self.prompt_page.get_prompts()
             if prompts:
                 self.image_page.set_prompts(prompts)
-                self.status_bar.showMessage(f"已加载 {prompts.total_prompts()} 个提示词", 2000)
+                self.statusBar().showMessage(f"已加载 {prompts.total_prompts()} 个提示词", 2000)
 
         # 切换到视频队列页面时，传递图像数据
         if index == 3:  # 视频队列页面
@@ -282,46 +313,96 @@ class MainWindow(QMainWindow):
                 # 转换为 (path, video_prompt) 格式
                 image_data = [(img.get('path', ''), img.get('video_prompt', '')) for img in images]
                 self.video_page.set_images_with_prompts(image_data)
-                self.status_bar.showMessage(f"已加载 {len(images)} 张图片", 2000)
+                self.statusBar().showMessage(f"已加载 {len(images)} 张图片", 2000)
 
     # ==================== 菜单操作 ====================
 
     def _new_session(self):
-        """新建会话"""
+        """创建新会话"""
         session_id = self.app_state.create_session()
         QMessageBox.information(self, "新会话", f"已创建新会话: {session_id}")
-
+    
     def _open_session(self):
-        """打开会话"""
-        # TODO: 实现会话选择对话框
-        QMessageBox.information(self, "打开会话", "此功能将在后续版本实现")
+        """打开会话（通过历史侧边栏）"""
+        QMessageBox.information(
+            self, 
+            "提示", 
+            "请在左侧历史记录面板中选择要打开的会话"
+        )
+    
+    def _on_session_restored(self, session_id: str):
+        """恢复历史会话"""
+        from database.manager import HistoryManager
+        
+        try:
+            history_manager = HistoryManager()
+            session = history_manager.get_session(session_id)
+            
+            if not session:
+                QMessageBox.warning(self, "错误", "会话不存在")
+                return
+            
+            # 显示会话信息（完整恢复功能需要更多开发）
+            reply = QMessageBox.question(
+                self,
+                "恢复会话",
+                f"会话: {session.name or session_id[:8]}\n"
+                f"创建时间: {session.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"诗词内容: {session.poetry_text[:100]}...\n\n"
+                f"是否打开此会话？",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # TODO: 完整恢复逻辑
+                # 1. 设置当前会话ID
+                self.app_state._current_session_id = session_id
+                
+                # 2. 在诗词页面恢复文本
+                # self.poetry_page.set_poetry_text(session.poetry_text)
+                
+                self.statusBar().showMessage(f"已打开会话: {session.name or session_id[:8]}", 5000)
+            
+        except Exception as e:
+            QMessageBox.warning(self, "恢复失败", f"错误: {str(e)}")
 
     def _export_session(self):
-        """导出会话"""
-        session_id = self.app_state.current_session_id
-        if not session_id:
-            QMessageBox.warning(self, "导出失败", "没有活动会话")
+        """导出当前会话"""
+        from utils.project_exporter import ProjectExporter
+        from database.manager import HistoryManager
+        from PySide6.QtWidgets import QFileDialog
+        from pathlib import Path
+        
+        if not self.app_state.current_session_id:
+            QMessageBox.warning(self, "提示", "请先创建会话")
             return
-
-        # 选择导出位置
+        
+        # 获取保存路径
+        default_name = f"poetry_project_{self.app_state.current_session_id[:8]}.zip"
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "导出会话",
-            f"{session_id}.zip",
+            "导出项目",
+            default_name,
             "ZIP 文件 (*.zip)"
         )
-
+        
         if file_path:
             try:
-                export_path = self.app_state.file_manager.export_session(
-                    session_id,
+                history_manager = HistoryManager()
+                exporter = ProjectExporter(history_manager)
+                
+                # 导出为 ZIP
+                output_path = exporter.export_as_zip(
+                    self.app_state.current_session_id,
                     Path(file_path)
                 )
+                
                 QMessageBox.information(
                     self,
                     "导出成功",
-                    f"会话已导出到: {export_path}"
+                    f"项目已导出到:\n{output_path}\n\n包含诗词、提示词、图片和视频"
                 )
+                self.statusBar().showMessage(f"项目已导出: {output_path.name}", 5000)
             except Exception as e:
                 QMessageBox.critical(
                     self,
@@ -332,6 +413,37 @@ class MainWindow(QMainWindow):
     def _go_to_tab(self, index: int):
         """跳转到指定标签页"""
         self.tab_widget.setCurrentIndex(index)
+    
+    def _toggle_theme(self):
+        """切换主题"""
+        from pathlib import Path
+        import sys
+        
+        # 获取当前主题
+        current_theme = getattr(self, '_current_theme', 'modern')
+        
+        # 切换主题
+        new_theme = 'dark' if current_theme == 'modern' else 'modern'
+        
+        # 加载新主题
+        root_dir = Path(sys.argv[0]).parent if hasattr(sys, 'argv') else Path.cwd()
+        style_path = root_dir / "resources" / "styles" / f"{new_theme}.qss"
+        
+        if style_path.exists():
+            with open(style_path, "r", encoding="utf-8") as f:
+                qss = f.read()
+                self.app_state.app.setStyleSheet(qss)
+                self._current_theme = new_theme
+                
+                # 更新菜单文本
+                if new_theme == 'dark':
+                    self.theme_action.setText("☀️ 切换到明亮模式")
+                else:
+                    self.theme_action.setText("🌙 切换到暗黑模式")
+                
+                self.status_bar.showMessage(f"已切换到{'暗黑' if new_theme == 'dark' else '明亮'}模式", 3000)
+        else:
+            QMessageBox.warning(self, "错误", f"主题文件不存在: {style_path}")
 
     def _show_about(self):
         """显示关于对话框"""

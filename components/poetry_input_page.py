@@ -384,10 +384,26 @@ class PromptGenerationThread(QThread):
             style_desc = ""
 
             if self.art_style:
+                # 完整的风格映射（包含所有 ART_STYLES）
                 preset_map = {
                     'ink': style_preset.CHINESE_INK,
                     'watercolor': style_preset.CHINESE_WATERCOLOR,
                     'gongbi': style_preset.GONGBI,
+                    'oil': {
+                        'description': 'Western oil painting style with rich textures, vivid colors, thick brush strokes, and dramatic lighting, reminiscent of classical European art'
+                    },
+                    'anime': {
+                        'description': 'Japanese anime art style with vibrant colors, expressive characters, clean lines, cel-shaded rendering, and dramatic atmospheric effects'
+                    },
+                    'realistic': {
+                        'description': 'Photo-realistic style with accurate details, natural lighting, realistic textures, true-to-life colors, and precise spatial depth'
+                    },
+                    'abstract': {
+                        'description': 'Abstract art style with non-representational forms, bold color blocks, geometric shapes, emotional expression through color and composition'
+                    },
+                    'minimalist': {
+                        'description': 'Minimalist design with clean composition, limited color palette, essential elements only, negative space emphasis, modern aesthetic'
+                    }
                 }
                 if self.art_style in preset_map:
                     style_desc = preset_map[self.art_style]['description']
@@ -469,13 +485,56 @@ class PromptGenerationThread(QThread):
 图像提示词要注重画面构图和色彩美感。
 视频提示词要注重动画制作的可执行性，包含具体的运镜、动画风格、转场和节奏描述。
 
+同时，为整首诗生成一个 Suno AI 音乐提示词，包含：
+1. style_prompt: 音乐风格标签（Genre, Vocals, Mood, Instruments），用逗号分隔
+2. title: 歌曲标题（基于诗词内容）
+3. lyrics_cn: 中文歌词（使用诗词原文，添加 [Verse], [Chorus] 等结构标签）
+4. lyrics_en: 英文歌词（诗词翻译版，添加结构标签）
+
 请严格按照上述 JSON 格式返回，不要添加任何其他文字。"""
+
+            # 更新系统提示词以包含音乐生成
+            music_prompt_addition = """
+
+## 音乐提示词 (Suno AI)
+同时为整首诗生成一个专业的 Suno AI 音乐提示词。
+
+### Style Prompt 格式
+用逗号分隔的标签，按重要性排序：
+[Genre] > [Vocal Style] > [Mood/Atmosphere] > [Tempo/Rhythm] > [Instrumentation]
+
+示例风格：
+- 古风：`Traditional Chinese, Guzheng, Erhu, Ethereal Female Vocals, Melancholic, Slow, Atmospheric`
+- 现代融合：`Cinematic, Orchestral, Chinese Folk Elements, Female Choir, Epic, Emotional`
+
+### 歌词结构
+使用 Suno 标签：
+- `[Intro]` - 开场引入
+- `[Verse]` - 诗句段落
+- `[Chorus]` - 副歌高潮
+- `[Bridge]` - 过渡段
+- `[Outro]` - 结尾
+
+完整 JSON 格式：
+{
+  "prompts": [...图像视频提示词...],
+  "music": {
+    "style_prompt": "Traditional Chinese, Guzheng, Erhu, Ethereal Female Vocals, Melancholic, Slow tempo, Atmospheric, Lo-fi",
+    "title": "基于诗词的歌曲标题",
+    "lyrics_cn": "[Verse]\\n诗句1\\n诗句2\\n\\n[Chorus]\\n诗句3\\n诗句4",
+    "lyrics_en": "[Verse]\\nEnglish translation line 1\\nEnglish translation line 2\\n\\n[Chorus]\\nEnglish translation line 3\\nEnglish translation line 4",
+    "instrumental": false
+  }
+}"""
+
+            # 将音乐提示词添加到系统提示词
+            full_system_prompt = system_prompt + music_prompt_addition
 
             # 调用 LLM
             client = self.app_state.llm_client
             response = client.chat(
                 messages=[{"role": "user", "content": user_prompt}],
-                system_prompt=system_prompt,
+                system_prompt=full_system_prompt,
                 temperature=0.8
             )
 
@@ -489,7 +548,9 @@ class PromptGenerationThread(QThread):
             data = json.loads(response)
 
             # 构建响应对象
+            from schemas.poetry import MusicPrompt
             prompts = PoetryPromptsResponse()
+            
             for item in data.get("prompts", []):
                 verse_prompts = []
                 for desc in item.get("descriptions", []):
@@ -514,7 +575,19 @@ class PromptGenerationThread(QThread):
                 )
                 prompts.prompts.append(verse)
 
+            # 解析音乐提示词
+            music_data = data.get("music", {})
+            if music_data:
+                prompts.music_prompt = MusicPrompt(
+                    style_prompt=music_data.get("style_prompt", ""),
+                    title=music_data.get("title", ""),
+                    lyrics_cn=music_data.get("lyrics_cn", ""),
+                    lyrics_en=music_data.get("lyrics_en", ""),
+                    instrumental=music_data.get("instrumental", False)
+                )
+
             self.finished.emit(prompts)
 
         except Exception as e:
             self.error.emit(str(e))
+

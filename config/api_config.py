@@ -85,18 +85,19 @@ class Models:
 
     # 文本模型
     TEXT_MODELS = {
-        'gpt-5.2': 'GPT-5.2 (最新)',
-        'gpt-4o': 'GPT-4o',
-        'claude-opus-4-5-20251101': 'Claude Opus 4.5',
-        'claude-sonnet-4-5-20250929': 'Claude Sonnet 4.5',
-        'gemini-3-pro-preview': 'Gemini 3 Pro',
-        'gemini-2.5-flash': 'Gemini 2.5 Flash',
-        'deepseek-v3.2': 'DeepSeek V3.2',
-        'deepseek-r1': 'DeepSeek R1',
-        'qwen3-max': 'Qwen3 Max',
-        'glm-4.7': 'GLM 4.7',
-        'grok-4.1': 'Grok 4.1',
-        'kimi-k2.5': 'Kimi K2.5',
+        'gpt-5.2': 'gpt-5.2',
+        'gpt-4o': 'gpt-4o',
+        'claude-opus-4-5-20251101': 'claude-opus-4-5-20251101',
+        'claude-sonnet-4-5-20250929': 'claude-sonnet-4-5-20250929',
+        'gemini-3-pro-preview': 'gemini-3-pro-preview',
+        'gemini-3-flash-preview': 'gemini-3-flash-preview',
+        'gemini-2.5-flash': 'gemini-2.5-flash',
+        'deepseek-v3.2': 'deepseek-v3.2',
+        'deepseek-r1': 'deepseek-r1',
+        'qwen3-max': 'qwen3-max',
+        'glm-4.7': 'glm-4.7',
+        'grok-4.1': 'grok-4.1',
+        'kimi-k2.5': 'kimi-k2.5',
     }
 
     # 图像模型
@@ -114,19 +115,20 @@ class Models:
 
     # 视频模型
     VIDEO_MODELS = {
-        'veo3.1': 'Veo 3.1',
-        'veo3.1-fast': 'Veo 3.1 Fast',
-        'veo3-fast-frames': 'Veo 3 Fast Frames',
-        'sora-2': 'Sora 2',
-        'sora-2-pro': 'Sora 2 Pro',
-        'grok-video-3': 'Grok Video 3',
-        'grok-video-3-10s': 'Grok Video 3 10s',
-        'kling-video': 'Kling Video',
-        'luma_video_api': 'Luma Video',
-        'runwayml-gen4_turbo-10': 'Runway Gen4 Turbo',
-        'doubao-seedance-1-0-pro-fast-251015': 'Doubao Seedance Pro',
-        'minimax/video-01': 'MiniMax Video 01',
-        'wan2.6-i2v': 'Wan 2.6 I2V',
+        'veo3.1': 'veo3.1',
+        'veo3.1-fast': 'veo3.1-fast',
+        'veo3-fast-frames': 'veo3-fast-frames',
+        'sora-2': 'sora-2',
+        'sora-2-pro': 'sora-2-pro',
+        'sora-2-all': 'sora-2-all',
+        'grok-video-3': 'grok-video-3',
+        'grok-video-3-10s': 'grok-video-3-10s',
+        'kling-video': 'kling-video',
+        'luma_video_api': 'luma_video_api',
+        'runwayml-gen4_turbo-10': 'runwayml-gen4_turbo-10',
+        'doubao-seedance-1-0-pro-fast-251015': 'doubao-seedance-1-0-pro-fast-251015',
+        'minimax/video-01': 'minimax/video-01',
+        'wan2.6-i2v': 'wan2.6-i2v',
     }
 
     # 音乐模型

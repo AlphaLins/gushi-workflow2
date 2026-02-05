@@ -583,8 +583,51 @@ class VideoQueuePage(QWidget):
         task = next((t for t in self.video_tasks if t.task_id == task_id), None)
 
         if task and task.video_url:
-            import webbrowser
-            webbrowser.open(task.video_url)
+            # 提供预览方式选择
+            from PySide6.QtWidgets import QDialog, QVBoxLayout, QRadioButton, QDialogButtonBox
+            
+            choice_dialog = QDialog(self)
+            choice_dialog.setWindowTitle("选择预览方式")
+            layout = QVBoxLayout(choice_dialog)
+            
+            browser_radio = QRadioButton("🌐 在浏览器中打开（推荐）")
+            browser_radio.setChecked(True)
+            player_radio = QRadioButton("🎬 使用内置播放器（需要编解码器）")
+            
+            layout.addWidget(browser_radio)
+            layout.addWidget(player_radio)
+            
+            buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            buttons.accepted.connect(choice_dialog.accept)
+            buttons.rejected.connect(choice_dialog.reject)
+            layout.addWidget(buttons)
+            
+            if choice_dialog.exec() == QDialog.Accepted:
+                if browser_radio.isChecked():
+                    # 在浏览器中打开
+                    import webbrowser
+                    webbrowser.open(task.video_url)
+                else:
+                    # 使用内置播放器
+                    try:
+                        from components.video_player_dialog import VideoPlayerDialog
+                        
+                        metadata = {
+                            'prompt': task.prompt,
+                            'model': task.model,
+                            'task_id': task.task_id,
+                            'image_path': task.image_path
+                        }
+                        
+                        dialog = VideoPlayerDialog(task.video_url, metadata, self)
+                        dialog.regenerate_requested.connect(
+                            lambda prompt: self._on_regenerate_requested(task_id, prompt)
+                        )
+                        dialog.exec()
+                    except Exception as e:
+                        QMessageBox.warning(self, "播放失败", f"内置播放器错误: {str(e)}\n\n将使用浏览器打开...")
+                        import webbrowser
+                        webbrowser.open(task.video_url)
         else:
             QMessageBox.information(self, "预览", "视频尚未生成完成")
 
@@ -597,11 +640,20 @@ class VideoQueuePage(QWidget):
             directory = QFileDialog.getExistingDirectory(self, "选择保存目录")
             if directory:
                 try:
+                    from utils.file_naming import FileNaming
                     client = self.app_state.video_client
-                    filename = f"{task_id}.mp4"
+                    
+                    # 使用规范化文件名
+                    filename = FileNaming.generate_video_filename(
+                        verse_index=getattr(task, 'verse_index', 0),
+                        prompt_index=getattr(task, 'prompt_index', 0),
+                        verse_text=getattr(task, 'verse_text', ''),
+                        model=task.model,
+                        task_id=task.task_id
+                    )
                     save_path = Path(directory) / filename
                     client.download_video(task.video_url, save_path)
-                    QMessageBox.information(self, "下载成功", f"视频已保存到 {save_path}")
+                    QMessageBox.information(self, "下载成功", f"视频已保存到:\n{save_path}")
                 except Exception as e:
                     QMessageBox.critical(self, "下载失败", f"下载失败: {str(e)}")
         else:
@@ -617,13 +669,20 @@ class VideoQueuePage(QWidget):
 
         directory = QFileDialog.getExistingDirectory(self, "选择保存目录")
         if directory:
-            import os
+            from utils.file_naming import FileNaming
             client = self.app_state.video_client
             success_count = 0
 
             for task in completed_tasks:
                 try:
-                    filename = f"verse_{task.verse_index}_prompt_{task.prompt_index}.mp4"
+                    # 使用规范化文件名
+                    filename = FileNaming.generate_video_filename(
+                        verse_index=getattr(task, 'verse_index', 0),
+                        prompt_index=getattr(task, 'prompt_index', 0),
+                        verse_text=getattr(task, 'verse_text', ''),
+                        model=task.model,
+                        task_id=task.task_id
+                    )
                     save_path = Path(directory) / filename
                     client.download_video(task.video_url, save_path)
                     success_count += 1
@@ -648,8 +707,27 @@ class VideoQueuePage(QWidget):
         )
 
         if reply == QMessageBox.Yes:
+            # 从表格中删除
             self.table.removeRow(row)
             self.video_tasks = [t for t in self.video_tasks if t.task_id != task_id]
+
+            # 更新统计
+            self._update_statistics()
+    
+    def _on_regenerate_requested(self, task_id: str, new_prompt: str):
+        """处理视频重新生成请求"""
+        # 查找原任务
+        task = next((t for t in self.video_tasks if t.task_id == task_id), None)
+        if not task:
+            return
+        
+        # 使用新提示词重新提交任务
+        image_data = [(task.image_path, new_prompt)]
+        self._start_video_generation(
+            image_data,
+            task.model,
+            getattr(task, 'aspect_ratio', '3:2')
+        )
 
 
 class VideoGenerationThread(QThread):

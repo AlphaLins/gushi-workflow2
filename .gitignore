@@ -49,6 +49,9 @@ logs/
 database/*.db
 database/*.sqlite
 database/*.sqlite3
+*.db
+*.sqlite
+*.sqlite3
 
 # Config (may contain API keys)
 config/secrets.yaml
