@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Generated content
+generated_images/
+generated_videos/
+generated_music/
+exports/
+sessions/
+image/
+
+# Logs
+logs/
+*.log
+
+# Database
+database/*.db
+database/*.sqlite
+database/*.sqlite3
+
+# Config (may contain API keys)
+config/secrets.yaml
+config/.env
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
