@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QProgressBar, QGroupBox,
     QScrollArea, QFrame, QMessageBox, QFileDialog,
-    QDialog, QTabWidget, QCheckBox, QInputDialog
+    QDialog, QTabWidget, QCheckBox, QInputDialog,
+    QButtonGroup, QRadioButton
 )
 from PySide6.QtCore import Signal, Qt, QThread
 from PySide6.QtGui import QPixmap, QCursor
@@ -90,6 +91,26 @@ class ImageGalleryPage(QWidget):
         self.generate_btn = QPushButton("🎨 生成图像")
         self.generate_btn.clicked.connect(self._start_generation)
         layout.addWidget(self.generate_btn)
+
+        # 生成模式选择 (Separate vs Grid)
+        self.mode_group = QButtonGroup(self)
+        mode_layout = QVBoxLayout()
+        mode_layout.setSpacing(2)
+        
+        self.mode_separate_radio = QRadioButton("分镜头生成")
+        self.mode_separate_radio.setChecked(True)
+        self.mode_separate_radio.setToolTip("为每句诗生成单独的图像")
+        
+        self.mode_grid_radio = QRadioButton("九宫格生成")
+        self.mode_grid_radio.setToolTip("生成一张包含所有镜头的网格拼图 (需先在输入页开启九宫格)")
+        self.mode_grid_radio.setEnabled(False)  # 默认禁用，有 grid_prompt 时启用
+        
+        self.mode_group.addButton(self.mode_separate_radio)
+        self.mode_group.addButton(self.mode_grid_radio)
+        
+        mode_layout.addWidget(self.mode_separate_radio)
+        mode_layout.addWidget(self.mode_grid_radio)
+        layout.addLayout(mode_layout)
 
         # 停止按钮
         self.stop_btn = QPushButton("⏹ 停止")
@@ -196,6 +217,15 @@ class ImageGalleryPage(QWidget):
         """设置提示词数据"""
         self.prompts = prompts
         self.generate_btn.setEnabled(True)
+        
+        # Check for grid prompt
+        if self.prompts and self.prompts.grid_prompt:
+            self.mode_grid_radio.setEnabled(True)
+        else:
+            self.mode_grid_radio.setChecked(False)
+            self.mode_separate_radio.setChecked(True)
+            self.mode_grid_radio.setEnabled(False)
+            
         self._update_pending_list()
 
     def _update_pending_list(self):
@@ -221,10 +251,19 @@ class ImageGalleryPage(QWidget):
 
         # 收集待生成的提示词
         to_generate = []
-        for verse_index, prompt_index, description, video_prompt in self.prompts.all_descriptions():
-            key = (verse_index, prompt_index)
-            if key not in self.generated_images or not self.generated_images[key].get('path'):
-                to_generate.append((verse_index, prompt_index, description, video_prompt))
+        
+        if self.mode_grid_radio.isChecked() and self.prompts.grid_prompt:
+             # 九宫格模式：只生成一张网格图
+             # 使用特殊索引 (-1, -1)
+             key = (-1, -1)
+             if key not in self.generated_images or not self.generated_images[key].get('path'):
+                 to_generate.append((-1, -1, self.prompts.grid_prompt, ""))
+        else:
+             # 分镜头模式
+             for verse_index, prompt_index, description, video_prompt in self.prompts.all_descriptions():
+                 key = (verse_index, prompt_index)
+                 if key not in self.generated_images or not self.generated_images[key].get('path'):
+                     to_generate.append((verse_index, prompt_index, description, video_prompt))
 
         if not to_generate:
             QMessageBox.information(self, "生成完成", "所有提示词均已生成图像")
@@ -368,11 +407,24 @@ class ImageGalleryPage(QWidget):
         layout.addWidget(image_label)
 
         # 信息标签
-        verse = self.prompts.get_verse(verse_index) if self.prompts else None
-        if verse:
-            label_text = f"{verse.verse[:15]}... #{prompt_index + 1}"
+        if verse_index == -1 and prompt_index == -1:
+            label_text = "九宫格 (All Verses)"
+            card.setStyleSheet("""
+                QFrame {
+                    border: 2px solid #9C27B0;
+                    border-radius: 8px;
+                    background-color: #f3e5f5;
+                }
+                QFrame:hover {
+                    border-color: #7B1FA2;
+                }
+            """)
         else:
-            label_text = f"诗句 {verse_index} #{prompt_index + 1}"
+            verse = self.prompts.get_verse(verse_index) if self.prompts else None
+            if verse:
+                label_text = f"{verse.verse[:15]}... #{prompt_index + 1}"
+            else:
+                label_text = f"诗句 {verse_index} #{prompt_index + 1}"
 
         label = QLabel(label_text)
         label.setAlignment(Qt.AlignCenter)
@@ -395,10 +447,17 @@ class ImageGalleryPage(QWidget):
         regenerate_btn.clicked.connect(lambda: self._regenerate_single_image(verse_index, prompt_index))
         btn_layout.addWidget(regenerate_btn)
 
-        video_btn = QPushButton("生成视频")
-        video_btn.setMaximumWidth(80)
-        video_btn.clicked.connect(lambda: self._generate_video_from_single(verse_index, prompt_index))
-        btn_layout.addWidget(video_btn)
+        if verse_index == -1 and prompt_index == -1:
+            extract_btn = QPushButton("提取分镜")
+            extract_btn.setMaximumWidth(80)
+            extract_btn.setStyleSheet("background-color: #E1BEE7; color: #4A148C;")
+            extract_btn.clicked.connect(lambda: self._show_extraction_dialog(path))
+            btn_layout.addWidget(extract_btn)
+        else:
+            video_btn = QPushButton("生成视频")
+            video_btn.setMaximumWidth(80)
+            video_btn.clicked.connect(lambda: self._generate_video_from_single(verse_index, prompt_index))
+            btn_layout.addWidget(video_btn)
 
         layout.addLayout(btn_layout)
 
@@ -778,6 +837,114 @@ class ImageGalleryPage(QWidget):
         
         # 触发重新生成
         self._regenerate_images([(verse_index, prompt_index, new_prompt, self.generated_images[key].get('video_prompt', ''))])
+
+
+    def _show_extraction_dialog(self, grid_image_path: str):
+        """显示分镜提取对话框"""
+        if not self.prompts:
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("选择要提取的分镜")
+        dialog.setMinimumSize(400, 500)
+        
+        layout = QVBoxLayout(dialog)
+        
+        hint = QLabel("请选择需要从九宫格中提取并放大的分镜头：")
+        layout.addWidget(hint)
+        
+        # 列表区域
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        list_layout = QVBoxLayout(container)
+        
+        checkboxes = []
+        
+        # 收集所有镜头
+        all_shots = []
+        shot_count = 0
+        for v in self.prompts.prompts:
+            if v.descriptions:
+                for d in v.descriptions:
+                    shot_count += 1
+                    all_shots.append({
+                        'verse_index': v.index,
+                        'prompt_index': v.descriptions.index(d),
+                        'verse_text': v.verse,
+                        'description': d.description,
+                        'shot_number': shot_count
+                    })
+
+        for shot in all_shots:
+            cb = QCheckBox(f"镜头 {shot['shot_number']}: {shot['verse_text'][:10]}...")
+            cb.setToolTip(shot['description'])
+            # 存储 metadata
+            cb.setProperty("shot_data", shot)
+            list_layout.addWidget(cb)
+            checkboxes.append(cb)
+            
+        list_layout.addStretch()
+        container.setLayout(list_layout)
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+        
+        # 按钮
+        btn_box = QHBoxLayout()
+        select_all_btn = QPushButton("全选")
+        select_all_btn.clicked.connect(lambda: [cb.setChecked(True) for cb in checkboxes])
+        btn_box.addWidget(select_all_btn)
+        
+        ok_btn = QPushButton("开始提取")
+        ok_btn.clicked.connect(dialog.accept)
+        btn_box.addWidget(ok_btn)
+        
+        layout.addLayout(btn_box)
+        
+        if dialog.exec() == QDialog.Accepted:
+            selected_tasks = []
+            for cb in checkboxes:
+                if cb.isChecked():
+                    data = cb.property("shot_data")
+                    
+                    # 构建提取提示词
+                    extraction_prompt = (
+                        f"Extract shot #{data['shot_number']} from the provided grid image. "
+                        f"Crop it precisely and upscale it to a standalone high-resolution image. "
+                        f"The content is: {data['description']}"
+                    )
+                    
+                    # 任务格式: (verse_index, prompt_index, description, video_prompt, input_image_path)
+                    selected_tasks.append((
+                        data['verse_index'],
+                        data['prompt_index'], 
+                        extraction_prompt, 
+                        "", 
+                        grid_image_path
+                    ))
+            
+            if selected_tasks:
+                self._start_extraction_generation(selected_tasks)
+
+    def _start_extraction_generation(self, tasks):
+        """开始提取生成任务"""
+        self.generate_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, len(tasks))
+        self.progress_bar.setValue(0)
+
+        self._generation_thread = ImageGenerationThread(
+            self.app_state,
+            tasks,
+            self.prompts,
+            self.app_state.current_session_id or "default"
+        )
+        self._generation_thread.progress.connect(self._on_generation_progress)
+        self._generation_thread.image_ready.connect(self._on_image_ready)
+        self._generation_thread.finished.connect(self._on_generation_finished)
+        self._generation_thread.failed.connect(self._on_generation_failed)
+        self._generation_thread.start()
 
 
 class ClickableLabel(QLabel):
@@ -1181,6 +1348,9 @@ class ImagePreviewDialog(QDialog):
             main_window.tab_widget.setCurrentIndex(3)
 
 
+
+
+
 class MJProcessingThread(QThread):
     """MJ 处理线程（上传 + Imagine + 等待）"""
     progress = Signal(str, str)  # progress, status
@@ -1296,7 +1466,7 @@ class ImageGenerationThread(QThread):
     def __init__(self, app_state, tasks: List[tuple], prompts: Optional[PoetryPromptsResponse], session_id: str):
         super().__init__()
         self.app_state = app_state
-        self.tasks = tasks  # [(verse_index, prompt_index, description, video_prompt), ...]
+        self.tasks = tasks  # [(verse_index, prompt_index, description, video_prompt, [optional]input_image_path), ...]
         self.prompts = prompts
         self.session_id = session_id
         self._stopped = False
@@ -1315,8 +1485,12 @@ class ImageGenerationThread(QThread):
             if self._stopped:
                 break
 
-            # 兼容旧格式（3项）和新格式（4项）
-            if len(task) >= 4:
+            # 兼容多种任务格式
+            input_image_path = None
+            if len(task) >= 5:
+                # 包含输入图片的任务 (图生图/提取)
+                verse_index, prompt_index, description, video_prompt, input_image_path = task[0], task[1], task[2], task[3], task[4]
+            elif len(task) >= 4:
                 verse_index, prompt_index, description, video_prompt = task[0], task[1], task[2], task[3]
             else:
                 verse_index, prompt_index, description = task
@@ -1331,7 +1505,8 @@ class ImageGenerationThread(QThread):
                 # 生成图像
                 result_path = client.generate_image(
                     description,
-                    save_path=save_path
+                    save_path=save_path,
+                    image_path=input_image_path
                 )
 
                 self.image_ready.emit(verse_index, prompt_index, result_path, video_prompt, description)

@@ -85,10 +85,10 @@ class PoetryInputPage(QWidget):
         # 文本编辑器
         self.text_edit = QTextEdit()
         self.text_edit.setPlaceholderText(
-            "床前明月光\n"
-            "疑是地上霜\n"
-            "举头望明月\n"
-            "低头思故乡"
+            "春苑月裴回\n"
+            "竹堂侵夜开\n"
+            "惊鸟排林度\n"
+            "风花隔水来"
         )
         self.text_edit.setMinimumHeight(300)
         layout.addWidget(self.text_edit)
@@ -159,6 +159,24 @@ class PoetryInputPage(QWidget):
         self.use_anchors_check.clicked.connect(self._toggle_anchors)
         options_layout.addRow("", self.use_anchors_check)
 
+        # --- 九宫格模式设置 ---
+        grid_group = QGroupBox("九宫格生图 (Nano Banana Pro)")
+        grid_group.setCheckable(True)
+        grid_group.setChecked(False)
+        self.grid_mode_group = grid_group
+        grid_layout = QFormLayout(grid_group)
+
+        self.resolution_combo = QComboBox()
+        self.resolution_combo.addItems(["4k", "8k", "2k", "1080p"])
+        grid_layout.addRow("分辨率:", self.resolution_combo)
+
+        self.aspect_ratio_combo = QComboBox()
+        self.aspect_ratio_combo.addItems(["16:9", "4:3", "1:1", "3:2", "21:9"])
+        grid_layout.addRow("画幅:", self.aspect_ratio_combo)
+
+        options_layout.addRow(grid_group)
+        # ---------------------
+
         options_group.setLayout(options_layout)
         layout.addWidget(options_group)
 
@@ -209,21 +227,10 @@ class PoetryInputPage(QWidget):
     def _load_example(self):
         """加载示例诗词"""
         examples = [
-            """床前明月光
-疑是地上霜
-举头望明月
-低头思故乡""",
-            """春江花月夜
-春江潮水连海平
-海上明月共潮生
-滟滟随波千万里
-何处春江无月明""",
-            """静夜思
-李白
-床前看月光
-疑是地上霜
-举头望山月
-低头思故乡""",
+            """春苑月裴回
+竹堂侵夜开
+惊鸟排林度
+风花隔水来""",
         ]
 
         import random
@@ -298,6 +305,11 @@ class PoetryInputPage(QWidget):
         art_style = self.art_style_combo.currentData()
         custom_style = self.custom_style_edit.toPlainText().strip()
         example_count = self.example_count_spin.currentData()
+        
+        # Grid Mode params
+        grid_mode = self.grid_mode_group.isChecked()
+        resolution = self.resolution_combo.currentText()
+        aspect_ratio = self.aspect_ratio_combo.currentText()
 
         # 启动生成线程
         self.generate_btn.setEnabled(False)
@@ -309,7 +321,10 @@ class PoetryInputPage(QWidget):
             art_style,
             custom_style,
             example_count,
-            self.use_anchors_check.isChecked()
+            self.use_anchors_check.isChecked(),
+            grid_mode=grid_mode,
+            resolution=resolution,
+            aspect_ratio=aspect_ratio
         )
         self._generation_thread.finished.connect(self._on_generation_complete)
         self._generation_thread.error.connect(self._on_generation_error)
@@ -367,7 +382,10 @@ class PromptGenerationThread(QThread):
 
     def __init__(self, app_state, verses: List[str],
                  art_style: str, custom_style: str,
-                 example_count: int, use_anchors: bool):
+                 example_count: int, use_anchors: bool,
+                 grid_mode: bool = False,
+                 resolution: str = "4k",
+                 aspect_ratio: str = "16:9"):
         super().__init__()
         self.app_state = app_state
         self.verses = verses
@@ -375,6 +393,9 @@ class PromptGenerationThread(QThread):
         self.custom_style = custom_style
         self.example_count = example_count
         self.use_anchors = use_anchors
+        self.grid_mode = grid_mode
+        self.resolution = resolution
+        self.aspect_ratio = aspect_ratio
 
     def run(self):
         """运行生成任务"""
@@ -416,7 +437,23 @@ class PromptGenerationThread(QThread):
 
             verses_text = "\n".join(f"{i + 1}. {v}" for i, v in enumerate(self.verses))
 
-            system_prompt = """你是一个专业的中国古典诗词视觉艺术家和视频导演。请根据以下诗句同时生成高质量的图像提示词和专业的视频提示词。
+
+            # 动态生成 JSON 模板示例
+            json_descriptions_template = """        {
+          "image": "Image Prompt 1 (English)...",
+          "video": "Video Prompt 1 (English)..."
+        }"""
+            
+            # 如果需要多个示例，就在模板中展示多个
+            if self.example_count > 1:
+                for i in range(2, self.example_count + 1):
+                    json_descriptions_template += f""",
+        {{
+          "image": "Image Prompt {i} (English)...",
+          "video": "Video Prompt {i} (English)..."
+        }}"""
+
+            sys_prompt_content = f"""你是一个专业的中国古典诗词视觉艺术家和视频导演。请根据以下诗句同时生成高质量的图像提示词和专业的视频提示词。
 
 ## 图像提示词要求
 每个图像描述必须包含：
@@ -459,34 +496,37 @@ class PromptGenerationThread(QThread):
    - 落花纷飞 (falling petals)
 
 请以 JSON 格式返回：
-{
+{{
   "prompts": [
-    {
+    {{
       "verse": "诗句原文",
       "index": 0,
       "descriptions": [
-        {
-          "image": "图像生成提示词 (英文)",
-          "video": "专业视频生成提示词 (英文，包含运镜、动画风格、转场、节奏)"
-        }
+{json_descriptions_template}
       ]
-    }
+    }}
   ]
-}"""
+}}"""
 
             user_prompt = f"""## 诗句
 {verses_text}
 
-## 风格要求
+## 视觉风格要求 (仅用于图像和视频，严禁用于音乐)
 {style_desc or 'traditional Chinese art style with ink painting aesthetic'}
+**注意：此风格描述仅适用于图像和视频画面的生成，绝不可用于音乐风格的生成。**
 
 ## 输出要求
 为每句诗生成 {self.example_count} 组不同的图像+视频提示词对。
 图像提示词要注重画面构图和色彩美感。
 视频提示词要注重动画制作的可执行性，包含具体的运镜、动画风格、转场和节奏描述。
 
-同时，为整首诗生成一个 Suno AI 音乐提示词，包含：
-1. style_prompt: 音乐风格标签（Genre, Vocals, Mood, Instruments），用逗号分隔
+同时，为整首诗生成一个 Suno AI 音乐提示词。
+**音乐生成特别说明：**
+音乐风格 (style_prompt) 必须**完全独立于上述的"视觉风格"**，仅基于诗词本身的情感、意境和历史背景进行创作。
+例如：如果诗词是悲伤的古诗，即使视觉风格选择了"赛博朋克"，音乐风格仍应是"Sad, Traditional Chinese Instruments, Guqin"等，而不是"Electronic"或"Cyberpunk"。
+
+音乐提示词需包含：
+1. style_prompt: 音乐风格标签（Genre, Vocals, Mood, Instruments），用逗号分隔。**请忽略视觉风格描述。**
 2. title: 歌曲标题（基于诗词内容）
 3. lyrics_cn: 中文歌词（使用诗词原文，添加 [Verse], [Chorus] 等结构标签）
 4. lyrics_en: 英文歌词（诗词翻译版，添加结构标签）
@@ -528,7 +568,7 @@ class PromptGenerationThread(QThread):
 }"""
 
             # 将音乐提示词添加到系统提示词
-            full_system_prompt = system_prompt + music_prompt_addition
+            full_system_prompt = sys_prompt_content + music_prompt_addition
 
             # 调用 LLM
             client = self.app_state.llm_client
@@ -540,12 +580,36 @@ class PromptGenerationThread(QThread):
 
             # 解析 JSON 响应
             import json
+            import logging
+            
+            # 记录原始响应以便调试
+            print(f"LLM Response: {response}")
+            
             # 尝试提取 JSON
-            json_match = re.search(r'\{[\s\S]*\}', response)
+            # 1. 尝试匹配 markdown 代码块 ```json ... ```
+            json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', response)
             if json_match:
-                response = json_match.group(0)
+                json_str = json_match.group(1)
+            else:
+                # 2. 尝试匹配最外层的 {}
+                json_match = re.search(r'\{[\s\S]*\}', response)
+                if json_match:
+                    json_str = json_match.group(0)
+                else:
+                    # 3. 都没有匹配到，尝试直接解析整个响应
+                    json_str = response
 
-            data = json.loads(response)
+            try:
+                data = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                # 如果解析失败，尝试修复常见的 JSON 格式错误 (如末尾逗号)
+                try:
+                    # 简单的修复尝试：移除末尾逗号
+                    fixed_str = re.sub(r',\s*\}', '}', json_str)
+                    fixed_str = re.sub(r',\s*\]', ']', fixed_str)
+                    data = json.loads(fixed_str)
+                except Exception:
+                    raise ValueError(f"无法解析 JSON 响应: {e}\nRaw response: {response[:200]}...")
 
             # 构建响应对象
             from schemas.poetry import MusicPrompt
@@ -586,8 +650,58 @@ class PromptGenerationThread(QThread):
                     instrumental=music_data.get("instrumental", False)
                 )
 
+            # --- 九宫格提示词生成逻辑 ---
+            if self.grid_mode and prompts.prompts:
+                # 获取所有提示词（包括多示例）
+                image_prompts = []
+                for v in prompts.prompts:
+                    if v.descriptions:
+                        for d in v.descriptions:
+                            image_prompts.append(d.description)
+                
+                count = len(image_prompts)
+                if count > 0:
+                    n, m = self._calculate_grid_layout(count)
+                    
+                    # 诗词总意境 (如果有多示例，简单重复诗词可能会有点冗余，但这保持了上下文)
+                    # 更好的做法可能只是列出诗句一次，但 prompt 数量匹配
+                    poem_summary = " ".join([v.verse for v in prompts.prompts])
+                    
+                    grid_prompt = f"根据【{poem_summary}】，生成一张具有凝聚力的[{n}*{m}]的网格图像（包含{count}个镜头），"
+                    grid_prompt += f"严格保持人物/物体服装光线的一致性，[{self.resolution}]分辨率，[{self.aspect_ratio}]画幅。"
+                    grid_prompt += "生成的多宫格图每一个分镜头都需要按照序号编号。\n\n"
+                    
+                    for i, prompt in enumerate(image_prompts):
+                        grid_prompt += f"镜头{i+1}: [{prompt}]\n"
+                    
+                    prompts.grid_prompt = grid_prompt
+            # ---------------------------
+
             self.finished.emit(prompts)
 
         except Exception as e:
             self.error.emit(str(e))
+
+    def _calculate_grid_layout(self, count: int) -> tuple:
+        """计算网格布局 (n, m)"""
+        if count <= 0:
+            return 1, 1
+        
+        # 特殊规则
+        if count == 3:
+            return 1, 3  # 1x3 长条
+        if count == 5:
+            return 1, 5  # 1x5 长条
+        
+        # 默认尝试接近正方形的布局 (2x2, 2x3, 3x3)
+        import math
+        n = int(math.ceil(math.sqrt(count)))
+        m = int(math.ceil(count / n))
+        
+        return m, n # 行, 列 (m*n) 或者 n*m，根据用户习惯通常是 行x列 或者 列x行。
+                    # 用户描述: "1*3" usually means 1 row 3 cols or 1 col 3 rows?
+                    # let's assume Row x Col. 
+                    # Users said: "3 or 5 can be 1*3". This likely means 1 Row, 3 Cols (Horizontal Strip).
+                    # I will return (1, count) for 3 and 5.
+
 

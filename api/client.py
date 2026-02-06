@@ -188,7 +188,8 @@ class UnifiedClient:
     def generate_image(self,
                       prompt: str,
                       model: Optional[str] = None,
-                      save_path: Optional[Path] = None) -> str:
+                      save_path: Optional[Path] = None,
+                      image_path: Optional[str] = None) -> str:
         """
         生成图像
 
@@ -196,6 +197,7 @@ class UnifiedClient:
             prompt: 图像提示词
             model: 图像模型
             save_path: 保存路径
+            image_path: 参考图像路径 (垫图/图生图)
 
         Returns:
             图像保存路径或 URL
@@ -205,8 +207,9 @@ class UnifiedClient:
             model_name = model or self.image_model
 
             if self._is_gemini_model(model_name):
-                return self._generate_image_gemini(prompt, model_name, save_path)
+                return self._generate_image_gemini(prompt, model_name, save_path, image_path)
             else:
+                # 其他模型可能不支持图生图，或者接口不同
                 return self._generate_image_chat(prompt, model_name, save_path)
 
         return self._retry_with_backoff(_do_request)
@@ -214,11 +217,37 @@ class UnifiedClient:
     def _generate_image_gemini(self,
                               prompt: str,
                               model: str,
-                              save_path: Optional[Path]) -> str:
+                              save_path: Optional[Path],
+                              image_path: Optional[str] = None) -> str:
         """Gemini 图像生成（返回 base64）"""
+        
+        parts = [{"text": prompt}]
+        
+        # 如果有参考图，读取并编码
+        if image_path:
+            try:
+                with open(image_path, "rb") as img_f:
+                    img_data = base64.b64encode(img_f.read()).decode('utf-8')
+                    # 获取 mime type
+                    mime_type = "image/png"
+                    if image_path.lower().endswith(".jpg") or image_path.lower().endswith(".jpeg"):
+                        mime_type = "image/jpeg"
+                    elif image_path.lower().endswith(".webp"):
+                        mime_type = "image/webp"
+                        
+                    parts.append({
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": img_data
+                        }
+                    })
+            except Exception as e:
+                print(f"读取参考图失败: {e}")
+                # 继续尝试纯文生图
+
         payload = {
             "contents": [
-                {"parts": [{"text": prompt}]}
+                {"parts": parts}
             ]
         }
 

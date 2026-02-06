@@ -7,7 +7,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QPushButton, QLabel, QGroupBox, QMenu,
-    QMessageBox, QAbstractItemView
+    QMessageBox, QAbstractItemView, QTextEdit,
+    QFormLayout, QTabWidget
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QAction
@@ -99,12 +100,35 @@ class PromptEditorPage(QWidget):
 
         layout.addWidget(self.table)
         
+        # --- 九宫格提示词显示区域 ---
+        self.grid_prompt_group = QGroupBox("🔲 九宫格生图提示词 (Grid Mode)")
+        self.grid_prompt_group.setVisible(False)  # 默认隐藏，只有有数据时显示
+        grid_layout_box = QVBoxLayout()
+        
+        self.grid_prompt_edit = QTextEdit()
+        self.grid_prompt_edit.setPlaceholderText("在此处微调生成的九宫格提示词...")
+        self.grid_prompt_edit.setMinimumHeight(100)
+        self.grid_prompt_edit.textChanged.connect(self._on_grid_prompt_changed)
+        grid_layout_box.addWidget(self.grid_prompt_edit)
+        
+        grid_btn_layout = QHBoxLayout()
+        grid_btn_layout.addStretch()
+        
+        self.copy_grid_btn = QPushButton("📋 复制九宫格提示词")
+        self.copy_grid_btn.clicked.connect(self._copy_grid_prompt)
+        grid_btn_layout.addWidget(self.copy_grid_btn)
+        
+        grid_layout_box.addLayout(grid_btn_layout)
+        self.grid_prompt_group.setLayout(grid_layout_box)
+        
+        layout.addWidget(self.grid_prompt_group)
+        # ---------------------------
+        
         # 音乐提示词显示区域
         self.music_group = QGroupBox("🎵 Suno AI 音乐提示词")
         music_layout = QVBoxLayout()
         
         # 风格和标题
-        from PySide6.QtWidgets import QFormLayout, QTextEdit
         info_layout = QFormLayout()
         
         self.music_title_label = QLabel("（生成后显示）")
@@ -119,7 +143,6 @@ class PromptEditorPage(QWidget):
         music_layout.addLayout(info_layout)
         
         # 歌词标签页
-        from PySide6.QtWidgets import QTabWidget
         self.lyrics_tabs = QTabWidget()
         
         self.lyrics_cn_edit = QTextEdit()
@@ -423,6 +446,30 @@ class PromptEditorPage(QWidget):
         self.prompts = prompts
         self._refresh_table()
         self._update_music_display()
+        self._update_grid_display()
+
+    def _update_grid_display(self):
+        """更新九宫格提示词显示"""
+        if self.prompts and self.prompts.grid_prompt:
+            self.grid_prompt_group.setVisible(True)
+            self.grid_prompt_edit.setPlainText(self.prompts.grid_prompt)
+        else:
+            self.grid_prompt_group.setVisible(False)
+            self.grid_prompt_edit.clear()
+
+    def _on_grid_prompt_changed(self):
+        """九宫格提示词变更"""
+        if self.prompts:
+            self.prompts.grid_prompt = self.grid_prompt_edit.toPlainText()
+            self.prompts_changed.emit(self.prompts)
+
+    def _copy_grid_prompt(self):
+        """复制九宫格提示词"""
+        text = self.grid_prompt_edit.toPlainText()
+        if text:
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText(text)
+            QMessageBox.information(self, "复制成功", "九宫格提示词已复制到剪贴板")
 
     def _update_music_display(self):
         """更新音乐提示词显示"""

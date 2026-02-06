@@ -284,7 +284,8 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_config_changed(self):
         """配置变更处理"""
-        self.status_bar.showMessage("配置已更新", 3000)
+        if self.statusBar():
+            self.statusBar().showMessage("配置已更新", 3000)
 
     @Slot()
     def _on_session_changed(self):

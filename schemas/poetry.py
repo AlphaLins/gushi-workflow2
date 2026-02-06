@@ -57,6 +57,7 @@ class PoetryPromptsResponse(BaseModel):
     """诗词提示词响应"""
     prompts: List[VersePrompts] = Field(default_factory=list, description="所有诗句的提示词")
     music_prompt: Optional[MusicPrompt] = Field(default=None, description="整首诗的音乐提示词")
+    grid_prompt: Optional[str] = Field(default=None, description="九宫格网格生图提示词")
 
     def add_verse(self, verse: str, index: int) -> None:
         """添加诗句"""
