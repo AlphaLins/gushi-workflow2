@@ -215,8 +215,10 @@ class MainWindow(QMainWindow):
         # 视图菜单
         view_menu = menubar.addMenu("视图(&V)")
 
-        # 主题切换
+        # 主题切换（添加快捷键 Ctrl+T）
         self.theme_action = QAction("🌙 切换到暗黑模式", self)
+        self.theme_action.setShortcut(QKeySequence("Ctrl+T"))
+        self.theme_action.setStatusTip("切换应用主题 (明亮/暗黑/黏土)")
         self.theme_action.triggered.connect(self._toggle_theme)
         view_menu.addAction(self.theme_action)
         
@@ -276,6 +278,14 @@ class MainWindow(QMainWindow):
         export_action = QAction("导出", self)
         export_action.triggered.connect(self._export_session)
         toolbar.addAction(export_action)
+
+        toolbar.addSeparator()
+
+        # 主题切换按钮
+        self.theme_toolbar_action = QAction("🎨 主题", self)
+        self.theme_toolbar_action.setStatusTip("切换应用主题 (Ctrl+T)")
+        self.theme_toolbar_action.triggered.connect(self._toggle_theme)
+        toolbar.addAction(self.theme_toolbar_action)
 
         toolbar.addSeparator()
 
