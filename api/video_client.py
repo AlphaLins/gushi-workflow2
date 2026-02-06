@@ -86,7 +86,7 @@ class VideoClient:
             )
         elif model_type == 'sora':
             payload = self._build_sora_payload(
-                model, prompt, image_urls, orientation, duration, watermark
+                model, prompt, image_urls, orientation, duration, watermark, size
             )
         else:
             # 通用格式
@@ -188,15 +188,25 @@ class VideoClient:
 
     def _build_sora_payload(self, model: str, prompt: str,
                            image_urls: List[str], orientation: str,
-                           duration: int, watermark: bool) -> Dict[str, Any]:
+                           duration: int, watermark: bool,
+                           size: str) -> Dict[str, Any]:
         """构建 Sora 视频请求"""
+        # 映射分辨率
+        size_map = {
+            "720P": "small",
+            "1080P": "large"
+        }
+        api_size = size_map.get(size, "small")
+
         return {
             "model": model,
             "images": image_urls[:1],
             "prompt": prompt,
             "orientation": orientation,
             "duration": duration,
-            "watermark": watermark
+            "watermark": watermark,
+            "size": api_size,
+            "private": False  # 必须字段
         }
 
     def _build_generic_payload(self, model: str, prompt: str,

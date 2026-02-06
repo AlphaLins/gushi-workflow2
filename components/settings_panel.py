@@ -138,6 +138,47 @@ class SettingsPanel(QWidget):
         group.setLayout(layout)
         return group
 
+    def _create_combo_row(self, combo: QComboBox, model_type: str) -> QHBoxLayout:
+        """创建带有保存按钮的下拉框行"""
+        row = QHBoxLayout()
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.NoInsert)  # 手动处理插入
+        row.addWidget(combo, stretch=1)
+        
+        save_btn = QPushButton("💾")
+        save_btn.setToolTip("保存当前填写的模型为自定义模型")
+        save_btn.setFixedWidth(30)
+        save_btn.clicked.connect(lambda: self._save_custom_model(combo, model_type))
+        row.addWidget(save_btn)
+        
+        return row
+
+    def _save_custom_model(self, combo: QComboBox, model_type: str):
+        """保存自定义模型"""
+        model_name = combo.currentText().strip()
+        if not model_name:
+            return
+            
+        # 检查是否已存在
+        for i in range(combo.count()):
+            if combo.itemText(i) == model_name:
+                return
+
+        # 添加到配置
+        if model_type not in self.config.custom_models:
+            self.config.custom_models[model_type] = []
+        
+        if model_name not in self.config.custom_models[model_type]:
+            self.config.custom_models[model_type].append(model_name)
+            self.app_state.update_config(custom_models=self.config.custom_models)
+            
+            # 添加到下拉框
+            combo.addItem(model_name, model_name)
+            combo.setCurrentIndex(combo.count() - 1)
+            
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "成功", f"模 '{model_name}' 已保存到自定义列表")
+
     def _create_model_group(self) -> QGroupBox:
         """创建模型配置组"""
         group = QGroupBox("文本和图像模型")
@@ -147,13 +188,13 @@ class SettingsPanel(QWidget):
         self.text_model_combo = QComboBox()
         for model_id, name in Models.TEXT_MODELS.items():
             self.text_model_combo.addItem(name, model_id)
-        layout.addRow("文本模型:", self.text_model_combo)
+        layout.addRow("文本模型:", self._create_combo_row(self.text_model_combo, 'text'))
 
         # 图像模型
         self.image_model_combo = QComboBox()
         for model_id, name in Models.IMAGE_MODELS.items():
             self.image_model_combo.addItem(name, model_id)
-        layout.addRow("图像模型:", self.image_model_combo)
+        layout.addRow("图像模型:", self._create_combo_row(self.image_model_combo, 'image'))
 
         # 温度参数
         self.temperature_spin = QDoubleSpinBox()
@@ -181,7 +222,7 @@ class SettingsPanel(QWidget):
         self.video_model_combo = QComboBox()
         for model_id, name in Models.VIDEO_MODELS.items():
             self.video_model_combo.addItem(name, model_id)
-        layout.addRow("视频模型:", self.video_model_combo)
+        layout.addRow("视频模型:", self._create_combo_row(self.video_model_combo, 'video'))
 
         # 宽高比
         self.aspect_ratio_combo = QComboBox()
@@ -207,7 +248,7 @@ class SettingsPanel(QWidget):
         self.music_model_combo = QComboBox()
         for model_id, name in Models.MUSIC_MODELS.items():
             self.music_model_combo.addItem(name, model_id)
-        layout.addRow("音乐模型:", self.music_model_combo)
+        layout.addRow("音乐模型:", self._create_combo_row(self.music_model_combo, 'music'))
 
         # 风格标签
         self.music_tags_edit = QLineEdit()
@@ -236,6 +277,23 @@ class SettingsPanel(QWidget):
         group.setLayout(layout)
         return group
 
+    def _load_custom_models(self, combo: QComboBox, model_type: str):
+        """加载自定义模型到下拉框"""
+        if not hasattr(self.config, 'custom_models'):
+            return
+            
+        custom_models = self.config.custom_models.get(model_type, [])
+        for model_name in custom_models:
+            # 检查是否已存在
+            exists = False
+            for i in range(combo.count()):
+                if combo.itemText(i) == model_name:
+                    exists = True
+                    break
+            
+            if not exists:
+                combo.addItem(model_name, model_name)
+
     def _load_config(self):
         """加载配置"""
         config = self.config
@@ -247,17 +305,27 @@ class SettingsPanel(QWidget):
         self.max_retries_spin.setValue(config.max_retries)
         self.native_google_check.setChecked(config.use_native_google)
 
+        # 加载自定义模型
+        self._load_custom_models(self.text_model_combo, 'text')
+        self._load_custom_models(self.image_model_combo, 'image')
+        self._load_custom_models(self.video_model_combo, 'video')
+        self._load_custom_models(self.music_model_combo, 'music')
+
         # 文本模型
         for i in range(self.text_model_combo.count()):
-            if self.text_model_combo.itemData(i) == config.model:
+            if self.text_model_combo.itemData(i) == config.model or self.text_model_combo.itemText(i) == config.model:
                 self.text_model_combo.setCurrentIndex(i)
                 break
+        else:
+             self.text_model_combo.setCurrentText(config.model)
 
         # 图像模型
         for i in range(self.image_model_combo.count()):
-            if self.image_model_combo.itemData(i) == config.image_model:
+            if self.image_model_combo.itemData(i) == config.image_model or self.image_model_combo.itemText(i) == config.image_model:
                 self.image_model_combo.setCurrentIndex(i)
                 break
+        else:
+             self.image_model_combo.setCurrentText(config.image_model)
 
         # 生成参数
         self.temperature_spin.setValue(config.temperature)
@@ -265,9 +333,11 @@ class SettingsPanel(QWidget):
 
         # 视频配置
         for i in range(self.video_model_combo.count()):
-            if self.video_model_combo.itemData(i) == config.video_model:
+            if self.video_model_combo.itemData(i) == config.video_model or self.video_model_combo.itemText(i) == config.video_model:
                 self.video_model_combo.setCurrentIndex(i)
                 break
+        else:
+             self.video_model_combo.setCurrentText(config.video_model)
 
         for i in range(self.aspect_ratio_combo.count()):
             if self.aspect_ratio_combo.itemData(i) == config.video_aspect_ratio:
@@ -281,9 +351,11 @@ class SettingsPanel(QWidget):
 
         # 音乐配置
         for i in range(self.music_model_combo.count()):
-            if self.music_model_combo.itemData(i) == config.music_model:
+            if self.music_model_combo.itemData(i) == config.music_model or self.music_model_combo.itemText(i) == config.music_model:
                 self.music_model_combo.setCurrentIndex(i)
                 break
+        else:
+             self.music_model_combo.setCurrentText(config.music_model)
 
         self.music_tags_edit.setText(config.music_tags)
 
@@ -300,14 +372,14 @@ class SettingsPanel(QWidget):
             'timeout': self.timeout_spin.value(),
             'max_retries': self.max_retries_spin.value(),
             'use_native_google': self.native_google_check.isChecked(),
-            'model': self.text_model_combo.currentData(),
-            'image_model': self.image_model_combo.currentData(),
+            'model': self.text_model_combo.currentData() or self.text_model_combo.currentText(),
+            'image_model': self.image_model_combo.currentData() or self.image_model_combo.currentText(),
             'temperature': self.temperature_spin.value(),
             'top_p': self.top_p_spin.value(),
-            'video_model': self.video_model_combo.currentData(),
+            'video_model': self.video_model_combo.currentData() or self.video_model_combo.currentText(),
             'video_aspect_ratio': self.aspect_ratio_combo.currentData(),
             'video_size': self.size_combo.currentData(),
-            'music_model': self.music_model_combo.currentData(),
+            'music_model': self.music_model_combo.currentData() or self.music_model_combo.currentText(),
             'music_tags': self.music_tags_edit.text(),
             'example_count': self.example_count_spin.value(),
             'style_anchors': self.style_anchors_check.isChecked(),

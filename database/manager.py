@@ -47,6 +47,35 @@ class HistoryManager:
             return session
         finally:
             db_session.close()
+
+    def update_session(self, session_id: str, name: str = None, poetry_text: str = None) -> bool:
+        """
+        更新会话
+        
+        Args:
+            session_id: 会话ID
+            name: 会话名称 (可选)
+            poetry_text: 诗词文本 (可选)
+            
+        Returns:
+            是否更新成功
+        """
+        db_session = self.SessionMaker()
+        try:
+            session = db_session.query(Session).filter(Session.id == session_id).first()
+            if not session:
+                return False
+                
+            if name is not None:
+                session.name = name
+            if poetry_text is not None:
+                session.poetry_text = poetry_text
+            
+            session.updated_at = datetime.now()
+            db_session.commit()
+            return True
+        finally:
+            db_session.close()
     
     def get_session(self, session_id: str) -> Optional[Session]:
         """获取会话"""

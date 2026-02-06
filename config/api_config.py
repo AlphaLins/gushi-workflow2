@@ -33,6 +33,9 @@ class APIConfig:
     # 生成配置
     example_count: int = 3  # 每句诗生成几个示例
     style_anchors: bool = True  # 是否使用风格锚定
+    
+    # 自定义模型
+    custom_models: dict = field(default_factory=dict)  # {'text': [], 'image': [], 'video': [], 'music': []}
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -53,6 +56,7 @@ class APIConfig:
             'music_tags': self.music_tags,
             'example_count': self.example_count,
             'style_anchors': self.style_anchors,
+            'custom_models': self.custom_models,
         }
 
     @classmethod

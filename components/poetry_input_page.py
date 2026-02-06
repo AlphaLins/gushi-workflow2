@@ -373,6 +373,10 @@ class PoetryInputPage(QWidget):
         self.result_label.setText(result_text)
         self.generate_btn.setEnabled(True)
 
+    def get_poetry_text(self) -> str:
+        """获取当前输入的诗词文本"""
+        return self.text_edit.toPlainText().strip()
+
 
 class PromptGenerationThread(QThread):
     """提示词生成线程"""

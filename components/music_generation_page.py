@@ -42,6 +42,9 @@ class MusicGenerationPage(QWidget):
         self.audio_output = QAudioOutput()
         self.media_player.setAudioOutput(self.audio_output)
 
+        # 监听配置变更
+        self.app_state.config_changed.connect(self.update_models)
+
         self._init_ui()
 
     def _init_ui(self):
@@ -95,8 +98,22 @@ class MusicGenerationPage(QWidget):
         model_layout.addWidget(QLabel("模型:"))
         self.model_combo = QComboBox()
         from api.suno_client import SunoClient
+        # 1. 预定义模型
         for model_id, model_name in SunoClient.get_available_models().items():
             self.model_combo.addItem(model_name, model_id)
+            
+        # 2. 自定义模型
+        if hasattr(self.app_state.config, 'custom_models'):
+            custom_music = self.app_state.config.custom_models.get('music', [])
+            for model_name in custom_music:
+                # 避免重复
+                exists = False
+                for i in range(self.model_combo.count()):
+                    if self.model_combo.itemText(i) == model_name:
+                        exists = True
+                        break
+                if not exists:
+                    self.model_combo.addItem(model_name, model_name)
         # 默认选择 chirp-v4
         self.model_combo.setCurrentIndex(2)
         model_layout.addWidget(self.model_combo)
@@ -700,6 +717,41 @@ class MusicGenerationPage(QWidget):
             f"• 歌词已填充\n\n"
             f"请根据需要调整后点击'生成音乐'！"
         )
+
+
+
+    def update_models(self):
+        """更新模型列表（响应配置变更）"""
+        current_model = self.model_combo.currentData()
+        self.model_combo.clear()
+        
+        from api.suno_client import SunoClient
+        # 1. 预定义模型
+        for model_id, model_name in SunoClient.get_available_models().items():
+            self.model_combo.addItem(model_name, model_id)
+            
+        # 2. 自定义模型
+        if hasattr(self.app_state.config, 'custom_models'):
+            custom_music = self.app_state.config.custom_models.get('music', [])
+            for model_name in custom_music:
+                # 避免重复
+                exists = False
+                for i in range(self.model_combo.count()):
+                    if self.model_combo.itemText(i) == model_name:
+                        exists = True
+                        break
+                if not exists:
+                    self.model_combo.addItem(model_name, model_name)
+                    
+        # 尝试恢复之前的选择
+        index = self.model_combo.findData(current_model)
+        if index >= 0:
+            self.model_combo.setCurrentIndex(index)
+        else:
+             # 默认选择 chirp-v4 (如果存在)
+             default_index = self.model_combo.findData("chirp-v4")
+             if default_index >= 0:
+                 self.model_combo.setCurrentIndex(default_index)
 
 
 class QFormLayout_(QVBoxLayout):

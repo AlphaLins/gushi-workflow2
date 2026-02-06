@@ -213,6 +213,13 @@ class ImageGalleryPage(QWidget):
 
         return widget
 
+    def cleanup(self):
+        """页面关闭时的清理"""
+        # 停止生成
+        if hasattr(self, '_generation_thread') and self._generation_thread.isRunning():
+            self._generation_thread.stop()
+            self._generation_thread.wait()
+
     def set_prompts(self, prompts: PoetryPromptsResponse):
         """设置提示词数据"""
         self.prompts = prompts
@@ -873,12 +880,13 @@ class ImageGalleryPage(QWidget):
                         'prompt_index': v.descriptions.index(d),
                         'verse_text': v.verse,
                         'description': d.description,
+                        'video_prompt': d.video_prompt,
                         'shot_number': shot_count
                     })
 
         for shot in all_shots:
             cb = QCheckBox(f"镜头 {shot['shot_number']}: {shot['verse_text'][:10]}...")
-            cb.setToolTip(shot['description'])
+            cb.setToolTip(f"{shot['description']}\n[Video Prompt]: {shot['video_prompt']}")
             # 存储 metadata
             cb.setProperty("shot_data", shot)
             list_layout.addWidget(cb)
@@ -919,7 +927,7 @@ class ImageGalleryPage(QWidget):
                         data['verse_index'],
                         data['prompt_index'], 
                         extraction_prompt, 
-                        "", 
+                        data['video_prompt'],
                         grid_image_path
                     ))
             

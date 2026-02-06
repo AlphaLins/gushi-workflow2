@@ -3,13 +3,73 @@
 内置视频播放功能，支持播放控制、进度条、音量调节
 """
 from typing import Optional
+
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QSlider, QLabel, QStyle, QSizePolicy
+    QSlider, QLabel, QStyle, QSizePolicy, QProgressBar
 )
-from PySide6.QtCore import Qt, QUrl, Signal, Slot
+from PySide6.QtCore import Qt, QUrl, Signal, Slot, QThread, QStandardPaths
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtMultimediaWidgets import QVideoWidget
+import tempfile
+import requests
+from pathlib import Path
+
+
+class VideoDownloadThread(QThread):
+    """视频下载线程"""
+    progress = Signal(int)
+    finished = Signal(str)
+    error = Signal(str)
+    
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url
+        self._stopped = False
+        
+    def stop(self):
+        self._stopped = True
+        
+    def run(self):
+        try:
+            # 创建临时文件
+            temp_dir = Path(tempfile.gettempdir()) / "guui_video_cache"
+            temp_dir.mkdir(exist_ok=True)
+            
+            filename = self.url.split('/')[-1].split('?')[0]
+            if not filename.endswith('.mp4'):
+                filename += '.mp4'
+                
+            save_path = temp_dir / filename
+            
+            # 如果文件已存在且大小正常，直接使用
+            if save_path.exists() and save_path.stat().st_size > 0:
+                self.finished.emit(str(save_path))
+                return
+            
+            # 下载
+            response = requests.get(self.url, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            
+            with open(save_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if self._stopped:
+                        return
+                        
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            self.progress.emit(int(downloaded / total_size * 100))
+                            
+            self.finished.emit(str(save_path))
+            
+        except Exception as e:
+            self.error.emit(str(e))
+
 
 
 class VideoPlayerDialog(QDialog):
@@ -46,6 +106,17 @@ class VideoPlayerDialog(QDialog):
         self.video_widget = QVideoWidget()
         self.video_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.video_widget)
+        
+        # 加载进度条 (默认隐藏)
+        self.loading_bar = QProgressBar()
+        self.loading_bar.setRange(0, 100)
+        self.loading_bar.setValue(0)
+        self.loading_bar.setTextVisible(True)
+        self.loading_bar.setFormat("正在缓冲视频... %p%")
+        self.loading_bar.hide()
+        layout.addWidget(self.loading_bar)
+        
+        # 播放控制区域
         
         # 播放控制区域
         controls_layout = self._create_controls()
@@ -128,8 +199,9 @@ class VideoPlayerDialog(QDialog):
         layout = QHBoxLayout()
         
         # 提示词
-        if 'prompt' in self.metadata:
-            prompt_label = QLabel(f"📝 提示词: {self.metadata['prompt'][:100]}...")
+        prompt = self.metadata.get('prompt')
+        if prompt:
+            prompt_label = QLabel(f"📝 提示词: {str(prompt)[:100]}...")
             prompt_label.setWordWrap(True)
             prompt_label.setStyleSheet("color: #666; padding: 5px;")
             layout.addWidget(prompt_label)
@@ -194,12 +266,44 @@ class VideoPlayerDialog(QDialog):
     def _load_video(self):
         """加载视频"""
         if self.video_url.startswith(('http://', 'https://')):
-            url = QUrl(self.video_url)
+            # 显示加载状态
+            self.loading_bar.show()
+            self.loading_bar.setValue(0)
+            self.play_button.setEnabled(False)
+            
+            # 启动下载线程
+            self.download_thread = VideoDownloadThread(self.video_url)
+            self.download_thread.progress.connect(self.loading_bar.setValue)
+            self.download_thread.finished.connect(self._on_video_ready)
+            self.download_thread.error.connect(self._on_video_error)
+            self.download_thread.start()
         else:
+            # 本地文件直接播放
             url = QUrl.fromLocalFile(self.video_url)
+            self.player.setSource(url)
+            self.player.play()
+            
+    def _on_video_ready(self, local_path: str):
+        """视频下载完成"""
+        self.loading_bar.hide()
+        self.play_button.setEnabled(True)
+        self.video_url = local_path  # 更新为本地路径
         
+        url = QUrl.fromLocalFile(local_path)
         self.player.setSource(url)
-        print(f"Loading video: {url.toString()}")
+        self.player.play()
+        
+    def _on_video_error(self, error_msg: str):
+        """视频下载失败"""
+        self.loading_bar.hide()
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.warning(self, "加载失败", f"无法加载视频: {error_msg}\n\n将尝试流式播放...")
+        
+        # 降级由于流式播放
+        url = QUrl(self.video_url)
+        self.player.setSource(url)
+        self.player.play()
+        self.play_button.setEnabled(True)
     
     @Slot()
     def _toggle_play(self):
@@ -276,7 +380,7 @@ class VideoPlayerDialog(QDialog):
         """发起重新生成请求"""
         from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QLabel, QTextEdit, QDialogButtonBox
         
-        current_prompt = self.metadata.get('prompt', '')
+        current_prompt = self.metadata.get('prompt') or ''
         
         # 创建自定义编辑对话框
         edit_dialog = QDialog(self)
@@ -371,4 +475,7 @@ class VideoPlayerDialog(QDialog):
     def closeEvent(self, event):
         """关闭事件"""
         self.player.stop()
+        if hasattr(self, 'download_thread') and self.download_thread.isRunning():
+            self.download_thread.stop()
+            self.download_thread.wait()
         super().closeEvent(event)

@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QStatusBar, QToolBar, QMenuBar,
-    QMenu, QMessageBox, QFileDialog
+    QMenu, QMessageBox, QFileDialog, QStyle
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QAction, QIcon, QKeySequence
@@ -178,6 +178,12 @@ class MainWindow(QMainWindow):
         open_session_action.setShortcut(QKeySequence.Open)
         open_session_action.triggered.connect(self._open_session)
         file_menu.addAction(open_session_action)
+        
+        # 保存项目
+        save_action = QAction("保存项目(&S)", self)
+        save_action.setShortcut(QKeySequence.Save)
+        save_action.triggered.connect(self._save_project)
+        file_menu.addAction(save_action)
 
         file_menu.addSeparator()
 
@@ -259,6 +265,12 @@ class MainWindow(QMainWindow):
         new_action = QAction("新建会话", self)
         new_action.triggered.connect(self._new_session)
         toolbar.addAction(new_action)
+        
+        # 保存项目
+        save_action = QAction("保存项目", self)
+        save_action.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        save_action.triggered.connect(self._save_project)
+        toolbar.addAction(save_action)
 
         # 导出
         export_action = QAction("导出", self)
@@ -366,6 +378,56 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             QMessageBox.warning(self, "恢复失败", f"错误: {str(e)}")
+
+        except Exception as e:
+            QMessageBox.warning(self, "恢复失败", f"错误: {str(e)}")
+
+    def _save_project(self):
+        """保存当前项目"""
+        if not self.app_state.current_session_id:
+            # 如果没有会话，先创建
+            self.app_state.create_session()
+            
+        try:
+            from database.manager import HistoryManager
+            history_manager = HistoryManager()
+            
+            # 1. 保存诗词文本
+            poetry_text = self.poetry_page.get_poetry_text()
+            # 尝试从诗词中提取标题作为名称
+            name = None
+            if poetry_text:
+                lines = poetry_text.strip().split('\n')
+                if lines:
+                    name = lines[0][:20]  # 取第一行前20字
+            
+            history_manager.update_session(
+                self.app_state.current_session_id,
+                name=name,
+                poetry_text=poetry_text
+            )
+            
+            # 2. 保存提示词
+            prompts = self.prompt_page.get_prompts()
+            if prompts:
+                prompt_data = []
+                for verse in prompts.verses:
+                    for i, p in enumerate(verse.prompts):
+                        prompt_data.append({
+                            'verse_index': verse.index,
+                            'prompt_index': i,
+                            'image_prompt': p.image_prompt,
+                            'video_prompt': p.video_prompt
+                        })
+                history_manager.save_prompts(self.app_state.current_session_id, prompt_data)
+            
+            self.statusBar().showMessage(f"项目已保存: {self.app_state.current_session_id}", 3000)
+            
+            # 简短提示
+            # QMessageBox.information(self, "保存成功", "项目已保存到数据库")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "保存失败", f"无法保存项目: {str(e)}")
 
     def _export_session(self):
         """导出当前会话"""
@@ -494,6 +556,12 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
+            # 停止页面线程
+            if hasattr(self.image_page, 'cleanup'):
+                self.image_page.cleanup()
+            if hasattr(self.video_page, 'cleanup'):
+                self.video_page.cleanup()
+
             # 清理资源
             if self.app_state._llm_client:
                 self.app_state._llm_client.close()

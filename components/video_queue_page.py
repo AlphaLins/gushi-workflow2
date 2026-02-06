@@ -287,10 +287,27 @@ class VideoQueuePage(QWidget):
         from config.api_config import Models
         model_combo = QComboBox()
         default_model_index = 0
+        from config.api_config import Models
+        
+        # 1. 预定义模型
         for idx, (model_id, name) in enumerate(Models.VIDEO_MODELS.items()):
             model_combo.addItem(name, model_id)
             if model_id == "grok-video-3-10s":
                 default_model_index = idx
+        
+        # 2. 自定义模型
+        if hasattr(self.app_state.config, 'custom_models'):
+            custom_videos = self.app_state.config.custom_models.get('video', [])
+            for model_name in custom_videos:
+                # 避免重复
+                exists = False
+                for i in range(model_combo.count()):
+                    if model_combo.itemText(i) == model_name:
+                        exists = True
+                        break
+                if not exists:
+                    model_combo.addItem(model_name, model_name)
+
         model_combo.setCurrentIndex(default_model_index)
         layout.addWidget(model_combo)
 
@@ -613,10 +630,10 @@ class VideoQueuePage(QWidget):
                         from components.video_player_dialog import VideoPlayerDialog
                         
                         metadata = {
-                            'prompt': task.prompt,
+                            'prompt': task.video_prompt,
                             'model': task.model,
                             'task_id': task.task_id,
-                            'image_path': task.image_path
+                            'image_path': task.source_image_path
                         }
                         
                         dialog = VideoPlayerDialog(task.video_url, metadata, self)
@@ -728,6 +745,16 @@ class VideoQueuePage(QWidget):
             task.model,
             getattr(task, 'aspect_ratio', '3:2')
         )
+    
+    def cleanup(self):
+        """页面关闭时的清理"""
+        # 停止轮询
+        self._stop_polling()
+        
+        # 停止生成线程
+        if hasattr(self, '_video_thread') and self._video_thread.isRunning():
+            self._video_thread.stop()
+            self._video_thread.wait()
 
 
 class VideoGenerationThread(QThread):
@@ -744,13 +771,22 @@ class VideoGenerationThread(QThread):
         self.model = model
         self.aspect_ratio = aspect_ratio
         self.session_id = session_id
+        self._stopped = False
+
+    def stop(self):
+        """停止生成"""
+        self._stopped = True
 
     def run(self):
         """运行生成任务"""
         uploader = self.app_state.image_uploader
         client = self.app_state.video_client
 
+
         for i, item in enumerate(self.image_data):
+            if self._stopped:
+                break
+
             try:
                 # 兼容多种数据格式：
                 # 1. 元组格式: (path, video_prompt)
