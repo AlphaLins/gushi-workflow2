@@ -31,8 +31,14 @@ class AppState(QObject):
         super().__init__()
 
         # API 配置
-        self._config: APIConfig = APIConfig.load()
-        self._config_path = Path.home() / '.guui_config.json'
+        # 优先查找程序目录下的 config.json
+        local_config = Path.cwd() / 'config.json'
+        if local_config.exists():
+            self._config_path = local_config
+        else:
+            self._config_path = Path.home() / '.guui_config.json'
+
+        self._config: APIConfig = APIConfig.load(self._config_path)
 
         # API 客户端（延迟初始化）
         self._llm_client: Optional[UnifiedClient] = None
@@ -48,6 +54,9 @@ class AppState(QObject):
 
         # 日志器
         self._logger = get_logger()
+        
+        # QApplication 实例
+        self._app: Optional['QApplication'] = None
 
     # ==================== 配置管理 ====================
 
@@ -168,6 +177,16 @@ class AppState(QObject):
     def logger(self):
         """获取日志器"""
         return self._logger
+
+
+    @property
+    def app(self) -> 'QApplication':
+        """获取 QApplication 实例"""
+        return self._app
+
+    def set_app(self, app: 'QApplication'):
+        """设置 QApplication 实例"""
+        self._app = app
 
 
 # 全局应用状态实例

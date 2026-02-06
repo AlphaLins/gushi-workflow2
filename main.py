@@ -20,6 +20,7 @@ from PySide6.QtGui import QIcon
 from core.main_window import MainWindow
 from core.app import get_app_state
 from utils.logger import setup_logging
+from utils.resource_path import resource_path
 
 
 def main():
@@ -35,6 +36,9 @@ def main():
     app.setApplicationVersion("1.0.0")
     app.setOrganizationName("Guui")
 
+    # 注册 App 实例到全局状态
+    get_app_state().set_app(app)
+
     # 设置应用样式
     app.setStyle("Fusion")
 
@@ -42,9 +46,15 @@ def main():
     _set_app_style(app)
 
     # 设置日志
-    log_dir = Path(ROOT_DIR) / "logs"
+    # 使用当前运行目录作为日志目录，确保便携性
+    log_dir = Path.cwd() / "logs"
     logger = setup_logging(log_dir)
     logger.info("应用启动")
+
+    # 检查是否首次运行
+    if not _check_first_run():
+        logger.info("用户取消了首次运行配置，应用退出")
+        sys.exit(0)
 
     # 创建并显示主窗口
     window = MainWindow()
@@ -60,6 +70,39 @@ def main():
     sys.exit(app.exec())
 
 
+def _check_first_run() -> bool:
+    """
+    检查是否首次运行，如果首次运行则显示配置向导
+
+    Returns:
+        bool: 是否应该继续启动应用
+    """
+    from config.api_config import APIConfig
+    from PySide6.QtWidgets import QDialog
+
+    # 检查用户配置文件
+    config_path = Path.home() / '.guui_config.json'
+
+    # 如果配置文件不存在，显示首次运行向导
+    if not config_path.exists():
+        from components.first_run_wizard import FirstRunWizard
+
+        logger = setup_logging(Path.cwd() / "logs")
+        logger.info("首次运行，显示配置向导")
+
+        wizard = FirstRunWizard()
+        result = wizard.exec()
+
+        if result == QDialog.Accepted:
+            logger.info("首次运行配置完成")
+            return True
+        else:
+            logger.info("用户取消了首次运行配置")
+            return False
+
+    return True
+
+
 def _set_app_style(app: QApplication, theme: str = "modern"):
     """
     设置应用样式
@@ -69,7 +112,7 @@ def _set_app_style(app: QApplication, theme: str = "modern"):
         theme: 主题名称 ('modern' 或 'dark')
     """
     # 加载 QSS 样式表
-    style_path = Path(ROOT_DIR) / "resources" / "styles" / f"{theme}.qss"
+    style_path = resource_path(f"resources/styles/{theme}.qss")
     
     if style_path.exists():
         with open(style_path, "r", encoding="utf-8") as f:
