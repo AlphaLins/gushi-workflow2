@@ -508,9 +508,10 @@ class MainWindow(QMainWindow):
         style_path = root_dir / "resources" / "styles" / f"{new_theme}.qss"
 
         if style_path.exists():
+            from PySide6.QtWidgets import QApplication
             with open(style_path, "r", encoding="utf-8") as f:
                 qss = f.read()
-                self.app_state.app.setStyleSheet(qss)
+                QApplication.instance().setStyleSheet(qss)
                 self._current_theme = new_theme
 
                 # 更新菜单文本
