@@ -478,33 +478,46 @@ class MainWindow(QMainWindow):
         self.tab_widget.setCurrentIndex(index)
     
     def _toggle_theme(self):
-        """切换主题"""
+        """切换主题 (modern -> dark -> clay -> modern)"""
         from pathlib import Path
         import sys
-        
+
         # 获取当前主题
         current_theme = getattr(self, '_current_theme', 'modern')
-        
-        # 切换主题
-        new_theme = 'dark' if current_theme == 'modern' else 'modern'
-        
+
+        # 循环切换主题: modern -> dark -> clay -> modern
+        theme_order = ['modern', 'dark', 'clay']
+        try:
+            current_index = theme_order.index(current_theme)
+            new_theme = theme_order[(current_index + 1) % len(theme_order)]
+        except ValueError:
+            new_theme = 'clay'
+
         # 加载新主题
         root_dir = Path(sys.argv[0]).parent if hasattr(sys, 'argv') else Path.cwd()
         style_path = root_dir / "resources" / "styles" / f"{new_theme}.qss"
-        
+
         if style_path.exists():
             with open(style_path, "r", encoding="utf-8") as f:
                 qss = f.read()
                 self.app_state.app.setStyleSheet(qss)
                 self._current_theme = new_theme
-                
+
                 # 更新菜单文本
-                if new_theme == 'dark':
-                    self.theme_action.setText("☀️ 切换到明亮模式")
-                else:
-                    self.theme_action.setText("🌙 切换到暗黑模式")
-                
-                self.status_bar.showMessage(f"已切换到{'暗黑' if new_theme == 'dark' else '明亮'}模式", 3000)
+                theme_names = {
+                    'modern': "🌙 切换到暗黑模式",
+                    'dark': "🎨 切换到黏土风格",
+                    'clay': "☀️ 切换到明亮模式"
+                }
+                self.theme_action.setText(theme_names.get(new_theme, "切换主题"))
+
+                # 显示状态消息
+                display_names = {
+                    'modern': "明亮",
+                    'dark': "暗黑",
+                    'clay': "黏土"
+                }
+                self.statusBar().showMessage(f"已切换到{display_names.get(new_theme, new_theme)}模式", 3000)
         else:
             QMessageBox.warning(self, "错误", f"主题文件不存在: {style_path}")
 
